@@ -121,13 +121,14 @@ ok(Trick::legalPlays(['9H', 'AH', 'JC'], $pl, 'H') === ['AH'], 'trump already do
 ok(Trick::legalPlays(['9H', 'JC'], $pl, 'H') === ['9H'], 'cannot over-trump -> must still play the (lower) trump, not sluff');
 ok(count(Trick::legalPlays(['9C', 'JC', 'KD'], [['seat' => 0, 'card' => 'QS']], 'H')) === 3, 'void with no trump -> sluff anything');
 ok(count(Trick::legalPlays(['9C', 'JC', 'KD'], [['seat' => 0, 'card' => 'QS']], 'NT')) === 3, 'no-trump: void -> sluff anything');
-$full = [['seat' => 0, 'card' => 'KS'], ['seat' => 1, 'card' => 'AS'], ['seat' => 2, 'card' => '9S'], ['seat' => 3, 'card' => 'TD']];
+$full = [['seat' => 0, 'card' => 'KS'], ['seat' => 1, 'card' => 'AS'], ['seat' => 2, 'card' => '9S'], ['seat' => 3, 'card' => 'QD']];
 ok(Trick::winnerSeat($full, 'H') === 1, 'highest of the led suit wins');
 $full2 = [['seat' => 0, 'card' => 'AS'], ['seat' => 1, 'card' => '9H'], ['seat' => 2, 'card' => 'TS'], ['seat' => 3, 'card' => 'KH']];
 ok(Trick::winnerSeat($full2, 'H') === 3, 'a trump beats the top of the led suit');
 $tie = [['seat' => 0, 'card' => 'AS'], ['seat' => 1, 'card' => 'AS'], ['seat' => 2, 'card' => '9S'], ['seat' => 3, 'card' => 'KS']];
 ok(Trick::winnerSeat($tie, 'H') === 0, 'identical top cards: the earlier play keeps it');
-ok(Trick::counters($full) === 2, 'counters in the trick (A + K)');
+ok(Trick::counters($full) === 2, 'counters in the trick (K + A, Q/9 are not counters)');
+ok(Trick::counters($full2) === 3, 'counters in the trick (A + T + K)');
 
 sec('Score');
 ok(Score::target('teams', 4) === 50 && Score::target('teams', 6) === 150 && Score::target('teams', 8) === 200, 'teams targets');
@@ -157,9 +158,14 @@ for ($k = 0; $k < 4; $k++) {
     $g->draw($seat, []);   // everyone stands pat
 }
 ok($g->hand['phase'] === 'play', 'all drawn -> play');
-$total = 0;
-foreach ($g->hand['hands'] as $hh) { ok(count($hh) === 5, 'each hand back to 5 before play'); $total += count($hh); }
-ok($total === 20, '20 cards in hands at the start of play');
+$playCards = [];
+foreach ($g->hand['hands'] as $hh) {
+    ok(count($hh) === 5, 'each hand back to 5 before play');
+    $playCards = array_merge($playCards, $hh);
+}
+ok(count($playCards) === 20, '20 cards in hands at the start of play');
+$startCounters = Cards::countCounters($playCards);
+sort($playCards, SORT_STRING);
 
 $guard = 0;
 while ($g->hand['phase'] === 'play' && $guard++ < 40) {
@@ -170,10 +176,17 @@ while ($g->hand['phase'] === 'play' && $guard++ < 40) {
 }
 ok($g->hand['phase'] === 'scored', 'five tricks played -> scored');
 ok(count($g->hand['tricks']) === 5, 'exactly 5 tricks');
-$cSum = 0; $tSum = 0;
-foreach ($g->hand['tricks'] as $t) { $cSum += $t['counters']; }
+
+$cSum = 0; $tSum = 0; $playedCards = [];
+foreach ($g->hand['tricks'] as $t) {
+    $cSum += $t['counters'];
+    foreach ($t['plays'] as $p) { $playedCards[] = $p['card']; }
+}
 foreach ($g->hand['tricksWonBySide'] as $tw) { $tSum += $tw; }
-ok($cSum === 24, 'all 24 counter points were captured across the tricks');
+sort($playedCards, SORT_STRING);
+ok($playedCards === $playCards, 'exactly the 20 dealt-in cards were played (conservation)');
+ok($cSum === $startCounters, 'counters captured in tricks = counters that were in the played hands');
+ok($cSum === array_sum($g->hand['countersBySide']), 'per-side counter tallies sum to the trick total');
 ok($tSum === 5, 'trick wins sum to 5');
 foreach ($g->hand['hands'] as $hh) { ok(count($hh) === 0, 'hands empty after play'); }
 $res = $g->handResult();
