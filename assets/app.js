@@ -507,11 +507,13 @@
     var played = el('div', 'played');
     var plays = (snap.trick && snap.trick.plays) || [];
     if (!plays.length && snap.lastTrick) {
-      snap.lastTrick.plays.forEach(function (p) { played.appendChild(pcard(p, snap.lastTrick.winnerSeat === p.seat, 'won')); });
+      snap.lastTrick.plays.forEach(function (p) {
+        played.appendChild(pcard(p, { won: snap.lastTrick.winnerSeat === p.seat }));
+      });
       f.appendChild(played);
       f.appendChild(el('div', 'trick-meta', seatName(snap.lastTrick.winnerSeat) + ' took trick ' + snap.tricksPlayed + ' (' + snap.lastTrick.counters + ' ctr) — leads next'));
     } else {
-      plays.forEach(function (p) { played.appendChild(pcard(p, false, p === plays[0] ? 'led' : '')); });
+      plays.forEach(function (p, i) { played.appendChild(pcard(p, { led: i === 0 })); });
       if (plays.length < snap.players) played.appendChild(el('div', 'pcard ghost', ''));
       f.appendChild(played);
       f.appendChild(el('div', 'trick-meta', 'Trick ' + ((snap.tricksPlayed || 0) + 1) + ' · ' + counterSummary(snap.tricksWonBySide)));
@@ -638,13 +640,15 @@
     host.appendChild(wrap);
   }
 
-  function pcard(p, win, flag) {
-    var c = el('div', 'pcard' + (RED[p.card.charAt(1)] ? ' red' : '') + (flag === 'led' ? ' lead' : ''));
-    if (flag) c.appendChild(el('span', 'flag', flag === 'won' ? 'won' : 'led'));
+  function pcard(p, opts) {
+    opts = opts || {};
+    var c = el('div', 'pcard' + (RED[p.card.charAt(1)] ? ' red' : '') +
+      (opts.won ? ' win' : '') + (opts.led ? ' lead' : ''));
+    if (opts.won) c.appendChild(el('span', 'flag', 'won'));       // only the card that took the trick
+    else if (opts.led) c.appendChild(el('span', 'flag', 'led'));
     c.appendChild(el('span', 'r', p.card.charAt(0)));
     c.appendChild(el('span', 's', SUIT[p.card.charAt(1)]));
     c.appendChild(el('span', 'who', seatName(p.seat)));
-    if (win) c.classList.add('lead');
     return c;
   }
 

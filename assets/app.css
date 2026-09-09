@@ -459,6 +459,11 @@ body {
   white-space: nowrap;
 }
 .pcard.lead { border-color: var(--brass); }
+.pcard.win {
+  border-color: var(--made);
+  box-shadow: 0 0 0 4px rgba(44,122,78,.4), 0 6px 18px rgba(0,0,0,.42);
+}
+.pcard.win .flag { background: var(--made); color: #fff; }
 .pcard.ghost {
   background: transparent;
   border: 3px dashed var(--baize-line);
