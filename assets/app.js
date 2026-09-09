@@ -595,15 +595,20 @@
       return;
     }
     var mine = (mySeat() != null && snap.seats[mySeat()]) ? snap.seats[mySeat()].sideNo : -1;
+    var bidSide = snap.bidWinnerSideNo;
     var wrap = el('div', 'won-panel');
     Object.keys(snap.capturedBySide).forEach(function (k) {
+      var side = +k;
       var cards = snap.capturedBySide[k].slice().sort(sortCard);
-      var grp = el('div', 'won-group' + (+k === mine ? ' mine' : ''));
+      var grp = el('div', 'won-group' + (side === mine ? ' mine' : ''));
+
       var head = el('div', 'won-head');
-      head.appendChild(el('span', null, snap.mode === 'teams' ? ('Team ' + (+k + 1)) : seatName(+k)));
+      head.appendChild(el('span', null,
+        (snap.mode === 'teams' ? ('Team ' + (side + 1)) : seatName(side)) + (side === bidSide ? ' (bid)' : '')));
       var ctr = (snap.countersBySide && snap.countersBySide[k]) || 0;
       head.appendChild(el('span', 'won-ctr', ctr + ' counter' + (ctr === 1 ? '' : 's')));
       grp.appendChild(head);
+
       var row = el('div', 'won-cards');
       if (!cards.length) row.appendChild(el('span', 'won-none', 'nothing yet'));
       cards.forEach(function (c) {
@@ -612,6 +617,22 @@
         row.appendChild(t);
       });
       grp.appendChild(row);
+
+      // counters, then meld, then the total  (meld + counters captured)
+      var meld = (snap.meldBySide && snap.meldBySide[k] != null) ? snap.meldBySide[k] : null;
+      var foot = el('div', 'won-foot');
+      foot.appendChild(el('span', null, 'counters ' + ctr));
+      if (meld != null) {
+        foot.appendChild(el('span', null, 'meld ' + meld));
+        var total = meld + ctr;
+        var tl = el('span', 'won-total', 'total ' + total);
+        if (side === bidSide && snap.winningBid) {
+          tl.textContent = 'total ' + total + ' / bid ' + snap.winningBid;
+          tl.classList.add(total >= snap.winningBid ? 'made' : 'set');
+        }
+        foot.appendChild(tl);
+      }
+      grp.appendChild(foot);
       wrap.appendChild(grp);
     });
     host.appendChild(wrap);

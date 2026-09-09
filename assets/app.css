@@ -29,6 +29,7 @@ img { max-width: 100%; }
   --brass:      #a9791f;
   --brass-bright:#d7a343;
   --brass-ink:  #33240a;
+  --legal:      #ffe000;   /* bright-yellow playable-card highlight */
   --made:       #2c7a4e;
   --set:        #b23a2f;
 
@@ -306,8 +307,8 @@ body {
 .tile .s { font-size: calc(var(--card) * .86); font-weight: 700; font-variant-emoji: text; }
 .tile.red .r, .tile.red .s { color: var(--suit-red); }
 .tile.legal {
-  border-color: var(--brass);
-  box-shadow: 0 0 0 3px rgba(169,121,31,.4), 0 3px 8px var(--tile-shadow);
+  border-color: var(--legal);
+  box-shadow: 0 0 0 5px var(--legal), 0 3px 10px var(--tile-shadow);
   transform: translateY(-4px);
 }
 .tile[disabled], .tile.blocked { cursor: not-allowed; opacity: .32; filter: grayscale(1); }
@@ -700,6 +701,15 @@ table.journal { width: 100%; border-collapse: collapse; font-family: var(--f-mon
 .won-ctr { color: var(--brass-bright); }
 .won-cards { display: flex; gap: 4px; flex-wrap: wrap; }
 .won-none { color: var(--felt-soft); font-size: 13px; }
+.won-foot {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--baize-line);
+  font-family: var(--f-mono); font-size: 13px; color: var(--felt-soft);
+}
+.won-foot .won-total { font-weight: 700; color: var(--felt-ink); }
+.won-foot .won-total.made { color: var(--made); }
+.won-foot .won-total.set  { color: var(--set); }
 
 .ready-row { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; }
 .ready-count { font-weight: 800; font-size: clamp(16px, 2vw, 20px); }

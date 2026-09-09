@@ -547,6 +547,7 @@ final class State
             'dealerSeat'    => $h['dealerSeat'] ?? null,
             'trump'         => $h['trump'] ?? null,
             'bidWinnerSeat' => $h['bidWinnerSeat'] ?? null,
+            'bidWinnerSideNo' => $h['bidWinnerSideNo'] ?? null,
             'winningBid'    => $h['winningBid'] ?? null,
             'auction'       => $h['auction'] ?? null,
             'turnSeat'      => $this->currentTurnSeat(),
