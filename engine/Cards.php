@@ -119,6 +119,7 @@ final class Cards
 
     public static function label(string $card): string
     {
-        return self::rank($card) . self::SUIT_GLYPH[self::suit($card)];
+        $r = self::rank($card);
+        return ($r === 'T' ? '10' : $r) . self::SUIT_GLYPH[self::suit($card)];
     }
 }

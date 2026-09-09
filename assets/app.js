@@ -12,6 +12,7 @@
   var toastEl = document.getElementById('toast');
   var SUIT = { S: '♠', H: '♥', D: '♦', C: '♣', NT: 'NT' };
   var RED = { H: 1, D: 1 };
+  function rankLabel(r) { return r === 'T' ? '10' : r; }   // ten shows as "10", code stays "T"
   var PHASE_LABEL = { auction: 'Auction', declare: 'Naming trump', draw: 'The draw', play: 'Playing', scored: 'Hand over' };
 
   var snap = null;          // last game snapshot
@@ -74,8 +75,9 @@
     var suit = code.charAt(1);
     if (RED[suit]) b.classList.add('red');
     if (opts.mini) b.classList.add('mini');
+    if (code.charAt(0) === 'T') b.classList.add('ten');
     if (opts.down) { b.classList.add('down'); return b; }
-    b.appendChild(el('span', 'r', code.charAt(0)));
+    b.appendChild(el('span', 'r', rankLabel(code.charAt(0))));
     b.appendChild(el('span', 's', SUIT[suit]));
     b.setAttribute('aria-label', code.charAt(0) + ' of ' + { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' }[suit]);
     return b;
@@ -534,7 +536,7 @@
       snap.legalPlays.forEach(function (code, i) {
         var b = el('button', 'act' + (i === 0 ? ' primary' : ''));
         b.appendChild(document.createTextNode('Play '));
-        b.appendChild(el('span', 's' + (RED[code.charAt(1)] ? ' red' : ''), code.charAt(0) + SUIT[code.charAt(1)]));
+        b.appendChild(el('span', 's' + (RED[code.charAt(1)] ? ' red' : ''), rankLabel(code.charAt(0)) + SUIT[code.charAt(1)]));
         b.addEventListener('click', function () { doPlay(code); });
         acts.appendChild(b);
       });
@@ -655,10 +657,11 @@
   function pcard(p, opts) {
     opts = opts || {};
     var c = el('div', 'pcard' + (RED[p.card.charAt(1)] ? ' red' : '') +
+      (p.card.charAt(0) === 'T' ? ' ten' : '') +
       (opts.won ? ' win' : '') + (opts.led ? ' lead' : ''));
     if (opts.won) c.appendChild(el('span', 'flag', 'won'));       // only the card that took the trick
     else if (opts.led) c.appendChild(el('span', 'flag', 'led'));
-    c.appendChild(el('span', 'r', p.card.charAt(0)));
+    c.appendChild(el('span', 'r', rankLabel(p.card.charAt(0))));
     c.appendChild(el('span', 's', SUIT[p.card.charAt(1)]));
     c.appendChild(el('span', 'who', seatName(p.seat)));
     return c;
