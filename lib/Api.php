@@ -202,6 +202,11 @@ final class Api
         return GameStore::snapshotFor($g, $user['uuid']);
     }
 
+    /**
+     * Deal a hand. Host only. Works for the first hand (status 'lobby', all
+     * seats filled) and every hand after (status 'active', current hand
+     * 'scored', game not over).
+     */
     public static function start(array $user, array $a): array
     {
         $uuid = self::gameUuid($a);
@@ -211,18 +216,29 @@ final class Api
                 throw new DomainException('No such game.');
             }
             if ($game['host_user_uuid'] !== $user['uuid']) {
-                throw new DomainException('Only the host can start the game.');
-            }
-            if ($game['status'] !== 'lobby') {
-                throw new DomainException('The game has already started.');
+                throw new DomainException('Only the host can deal.');
             }
             $gameId  = (int) $game['id'];
             $players = (int) $game['player_count'];
-            $seated  = (int) $db->query("SELECT COUNT(*) c FROM game_player WHERE game_id = {$gameId}")->fetch_assoc()['c'];
-            if ($seated < $players) {
-                throw new DomainException("Need {$players} players — {$seated} seated.");
+
+            if ($game['status'] === 'lobby') {
+                $seated = (int) $db->query("SELECT COUNT(*) c FROM game_player WHERE game_id = {$gameId}")->fetch_assoc()['c'];
+                if ($seated < $players) {
+                    throw new DomainException("Need {$players} players — {$seated} seated.");
+                }
+            } elseif ($game['status'] === 'active') {
+                $g = GameStore::load($db, $uuid);
+                if ($g->isGameOver()) {
+                    throw new DomainException('The game is over.');
+                }
+                if (!$g->hand || $g->hand['phase'] !== 'scored') {
+                    throw new DomainException('Finish the current hand first.');
+                }
+            } else {
+                throw new DomainException('This game is complete.');
             }
-            $g = GameStore::startHand($db, $uuid);   // random deck
+
+            $g = GameStore::startHand($db, $uuid);   // random deck; rotates dealer + hand_no
             return GameStore::snapshotFor($g, $user['uuid']);
         });
         self::announce($uuid);

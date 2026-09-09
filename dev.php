@@ -241,13 +241,16 @@ if (isset($_GET['api'])) {
         echo "  scores " . json_encode($final['result']['handScores']) .
              "  running " . json_encode($final['result']['runningAfter']) . "\n";
 
-        // turn-enforcement: a player out of turn is refused
+        // non-host cannot deal the next hand
         try {
-            Api::start($me, ['game' => $uuid]);   // already active
-            $ok(false, 'start on an active game rejected');
+            Api::start($bots[0], ['game' => $uuid]);
+            $ok(false, 'non-host next-hand rejected');
         } catch (DomainException $e) {
-            $ok(true, 'start on an active game rejected');
+            $ok(true, 'non-host next-hand rejected');
         }
+        // host deals hand 2 (previous hand is scored)
+        $h2 = Api::start($me, ['game' => $uuid]);
+        $ok($h2['phase'] === 'auction' && $h2['handNo'] === 2, 'host deals hand 2 -> auction');
 
         // chat
         Api::chatPost($me, ['game' => $uuid, 'text' => 'good game']);

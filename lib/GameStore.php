@@ -180,9 +180,48 @@ final class GameStore
         if ($handRow && $handRow['state_json'] !== null && $handRow['state_json'] !== '') {
             $g->importHand(json_decode((string) $handRow['state_json'], true));
         }
-        $g->roster = self::roster($db, $gameId);
+        $g->roster   = self::roster($db, $gameId);
+        $g->journal  = self::journal($db, $gameId);
+        $g->joinCode = $game['join_code'] ?? null;
 
         return $g;
+    }
+
+    /** Scored-hand history (one entry per hand) for the score pad. */
+    private static function journal(mysqli $db, int $gameId): array
+    {
+        $rows = self::rows(
+            $db,
+            "SELECT h.hand_no, h.bid_winner_side_no, h.winning_bid, h.bid_made, h.trump,
+                    hs.side_no, hs.meld_points, hs.counters_captured, hs.hand_score, hs.score_after
+             FROM hand h
+             JOIN hand_side hs ON hs.hand_id = h.id
+             WHERE h.game_id = ? AND h.phase = 'scored'
+             ORDER BY h.hand_no, hs.side_no",
+            'i',
+            [$gameId]
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $hn = (int) $r['hand_no'];
+            if (!isset($out[$hn])) {
+                $out[$hn] = [
+                    'handNo'     => $hn,
+                    'bidderSide' => $r['bid_winner_side_no'] !== null ? (int) $r['bid_winner_side_no'] : null,
+                    'bid'        => (int) $r['winning_bid'],
+                    'trump'      => $r['trump'],
+                    'made'       => (int) $r['bid_made'] === 1,
+                    'sides'      => [],
+                ];
+            }
+            $out[$hn]['sides'][(int) $r['side_no']] = [
+                'meld'     => (int) $r['meld_points'],
+                'counters' => (int) $r['counters_captured'],
+                'delta'    => (int) $r['hand_score'],
+                'after'    => (int) $r['score_after'],
+            ];
+        }
+        return array_values($out);
     }
 
     /** Deal and persist a fresh hand. Pass $deck only for deterministic tests. */

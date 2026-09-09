@@ -92,11 +92,11 @@ $user = pp_current_user();
 
       <nav class="menus" aria-label="Main menu">
         <div class="menu-wrap">
-          <button type="button" aria-haspopup="true" aria-expanded="false">File</button>
+          <button type="button" aria-haspopup="true" aria-expanded="false">Game</button>
           <div class="menu-pop" hidden>
-            <button type="button">New game&hellip;</button>
-            <button type="button">Join game by code&hellip;</button>
-            <button type="button">Leave table</button>
+            <button type="button" data-act="new-game">New game&hellip;</button>
+            <button type="button" data-act="join-game">Join by code&hellip;</button>
+            <button type="button" data-act="leave-game">Leave table</button>
             <hr>
             <button type="button" onclick="location.href='?logout'">Sign out</button>
           </div>
@@ -104,10 +104,7 @@ $user = pp_current_user();
         <div class="menu-wrap">
           <button type="button" aria-haspopup="true" aria-expanded="false">Help</button>
           <div class="menu-pop" hidden>
-            <button type="button">How to play</button>
-            <button type="button">Meld &amp; scoring reference</button>
-            <hr>
-            <button type="button">About this table</button>
+            <button type="button" data-act="how-to-play">How to play</button>
           </div>
         </div>
       </nav>
@@ -125,25 +122,15 @@ $user = pp_current_user();
       </div>
     </header>
 
-    <!-- LEFT: hands + chat -->
     <aside class="rail">
       <h2 class="rail-h">Hands</h2>
-      <section class="hands" aria-label="Players and hands">
-        <div class="team-tab t1">Table <span class="team-score">1</span></div>
-        <div class="player active">
-          <div class="p-name">
-            <?= h($user['name']) ?> <span class="badge you">you</span>
-          </div>
-          <div class="p-cards" aria-label="Your hand"><span class="count" style="margin-left:0">no cards yet</span></div>
-        </div>
-        <p class="empty">Waiting for others to sit down. When everyone&rsquo;s ready you&rsquo;ll pick teams (or play cutthroat on an odd count).</p>
+      <section class="hands" id="hands" aria-label="Players and hands">
+        <p class="empty">Not at a table yet.</p>
       </section>
 
       <h2 class="rail-h">Chat</h2>
       <section class="chat" aria-label="Table chat">
-        <div class="bubbles" id="bubbles" data-me="<?= h($user['name']) ?>">
-          <div class="bub sys"><?= h($user['name']) ?> sat down</div>
-        </div>
+        <div class="bubbles" id="bubbles" data-me="<?= h($user['name']) ?>"></div>
       </section>
       <form class="composer" id="composer">
         <input type="text" id="chatInput" placeholder="Message the table&hellip;" aria-label="Chat message" autocomplete="off">
@@ -151,45 +138,31 @@ $user = pp_current_user();
       </form>
     </aside>
 
-    <!-- CENTER: the table -->
     <main class="table" aria-label="The table">
-      <div class="status">
-        <div class="status-main">
-          <span>No game running</span>
-          <span class="mock">Shell &middot; login + layout</span>
-        </div>
-        <div class="status-turn">Signed in. The engine, API and realtime layers come next.</div>
+      <div class="status" id="status" hidden>
+        <div class="status-main" id="status-main"></div>
+        <div class="status-turn" id="status-turn"></div>
       </div>
-
-      <div class="felt">
-        <div class="lobby">
-          <h2>You&rsquo;re at the table, <?= h($user['name']) ?>.</h2>
-          <p>No hand is in progress yet. Start a game or join one with a share code — cards, the auction, meld and scoring aren&rsquo;t built yet.</p>
-          <div class="row">
-            <button class="act primary" type="button">New game</button>
-            <button class="act ghost-btn" type="button">Join by code</button>
-          </div>
-        </div>
-      </div>
+      <div class="felt" id="felt"></div>
     </main>
 
-    <!-- RIGHT: full-height score pad -->
     <aside class="scorepanel" aria-label="Running score">
       <h2 class="rail-h">Score</h2>
-      <div class="sp-body">
-        <div class="bid-card">
-          <span class="k">This hand &mdash; the bid</span>
-          <span class="v"><span class="who">&mdash;</span></span>
-          <span class="sub">no bid yet</span>
-        </div>
-        <p class="empty">No hands played yet. Each hand&rsquo;s meld, counters and running total will land here.</p>
-        <div class="sp-goal">Game target set when a game starts</div>
-      </div>
+      <div class="sp-body" id="score"><p class="empty">No game yet.</p></div>
     </aside>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="assets/app.js?v=1"></script>
+  <script>
+    window.PP = {
+      me:    { uuid: <?= json_encode($user['uuid']) ?>, name: <?= json_encode($user['name']) ?> },
+      csrf:  <?= json_encode(pp_csrf_token()) ?>,
+      base:  <?= json_encode($base) ?>,
+      wsUrl: <?= json_encode((string) ($cfg['soketi']['ws_url'] ?? '')) ?>,
+      wsKey: <?= json_encode((string) ($cfg['soketi']['key'] ?? '')) ?>
+    };
+  </script>
+  <script src="assets/app.js?v=2"></script>
 
 <?php endif; ?>
 

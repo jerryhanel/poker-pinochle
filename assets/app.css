@@ -616,7 +616,87 @@ table.journal { width: 100%; border-collapse: collapse; font-family: var(--f-mon
   .menubar { flex-wrap: wrap; }
 }
 
+/* ---------- lobby (inside the felt) ---------- */
+.lobby-form {
+  display: flex; flex-direction: column; gap: 8px;
+  background: rgba(0,0,0,.2); border: 1px solid var(--baize-line);
+  border-radius: 12px; padding: 14px 16px; width: min(440px, 100%);
+}
+.lobby-form label {
+  font-size: 12px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--felt-soft);
+}
+.lobby-form .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+.lobby-form select, .lobby-form input {
+  font: inherit; font-size: 16px; padding: 10px 12px;
+  border: 2px solid var(--baize-line); border-radius: 9px;
+  background: var(--tile); color: var(--suit-black); min-width: 0;
+}
+.lobby-form input { flex: 1; }
+.lobby-list { display: flex; flex-direction: column; gap: 6px; width: min(440px, 100%); }
+.lobby-open {
+  font: inherit; font-family: var(--f-mono); font-size: 14px;
+  text-align: left; padding: 10px 12px;
+  border: 2px solid var(--baize-line); border-radius: 9px;
+  background: rgba(0,0,0,.2); color: var(--felt-ink); cursor: pointer;
+}
+.lobby-open:hover { border-color: var(--brass); }
+.lobby-code {
+  font-family: var(--f-mono); font-size: 22px; font-weight: 700;
+  letter-spacing: .12em; color: var(--brass-bright);
+}
+.lobby-wait { font-size: clamp(15px,1.7vw,18px); color: var(--felt-soft); }
+
+/* ---------- in-hand controls on the turn bar ---------- */
+.bidbox, .trumpbox, .drawbox { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.bidbox .amt {
+  font-family: var(--f-mono); font-weight: 800; font-size: clamp(20px,2.4vw,28px);
+  min-width: 2.2em; text-align: center; color: var(--brass-ink);
+}
+.step {
+  font: inherit; font-weight: 800; font-size: 20px;
+  width: 48px; min-height: 48px;
+  border: 3px solid var(--brass-ink); border-radius: 10px;
+  background: transparent; color: var(--brass-ink); cursor: pointer;
+}
+.auction-log {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  font-family: var(--f-mono); font-size: 13px; color: var(--felt-soft);
+}
+.auction-log .hi { color: var(--brass-bright); font-weight: 700; }
+
+/* draw: click your cards to mark them for discard */
+.pickrow { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.tile.picked {
+  border-color: var(--set);
+  box-shadow: 0 0 0 3px rgba(178,58,47,.4);
+  transform: translateY(6px);
+}
+
+/* meld reveal strip already styled as .meldstrip/.meld-item */
+.result-box {
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+  text-align: center; max-width: 46ch;
+}
+.result-box .big {
+  font-size: clamp(22px,3vw,34px); font-weight: 800;
+}
+.result-box .made { color: var(--made); }
+.result-box .set  { color: var(--set); }
+
+/* ---------- score pad additions ---------- */
+.sp-running { display: flex; gap: 10px; }
+.sp-run {
+  flex: 1; border: 2px solid var(--pad-line); border-radius: 11px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.sp-run.lead { border-color: var(--brass); background: rgba(169,121,31,.1); }
+.sp-run .k { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+.sp-run .n { font-family: var(--f-mono); font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sp-run .n.neg { color: var(--set); }
+.sp-run .n.pos { color: var(--made); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .tile.legal { transform: none; }
+  .tile.legal, .tile.picked { transform: none; }
 }

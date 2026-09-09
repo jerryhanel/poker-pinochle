@@ -46,6 +46,12 @@ final class State
     /** @var array<int,array> seat_no => {uuid,name,sideNo,isHost,connection}. Carried, not used by the engine. */
     public $roster = [];
 
+    /** @var array scored-hand history for the score pad. Carried, set by GameStore::load. */
+    public $journal = [];
+
+    /** @var string|null share code. Carried, set by GameStore::load. */
+    public $joinCode = null;
+
     public function __construct(int $players, string $mode, array $rules = [])
     {
         if ($players < 2 || $players > 8) {
@@ -505,6 +511,7 @@ final class State
             'players'       => $this->players,
             'mode'          => $this->mode,
             'target'        => $this->target,
+            'joinCode'      => $this->joinCode,
             'sides'         => $this->sides,
             'running'       => $this->running,
             'handNo'        => $this->handNo,
@@ -524,6 +531,10 @@ final class State
             'tricksWonBySide'=> $h['tricksWonBySide'] ?? null,
             'result'        => $h['result'] ?? null,
             'legalPlays'    => $legalPlays,
+            'keepMin'       => (int) ($this->rules['keep_min'] ?? 0),
+            'meld'          => ($h && !empty($h['meldRecord'])) ? $h['meldRecord'] : null,
+            'lastTrick'     => ($h && !empty($h['tricks'])) ? $h['tricks'][count($h['tricks']) - 1] : null,
+            'journal'       => $this->journal,
             'seats'         => $seats,
         ];
     }
