@@ -333,7 +333,7 @@
       var t = el('table', 'journal');
       var cap = el('caption', null, 'Hand-by-hand'); t.appendChild(cap);
       var thead = el('thead'); var htr = el('tr');
-      htr.appendChild(el('th', null, 'Hand · bid'));
+      htr.appendChild(el('th', null, 'Bid'));
       sides.forEach(function (k) { htr.appendChild(el('th', null, snap.mode === 'teams' ? ('T' + (+k + 1)) : seatName(+k))); });
       thead.appendChild(htr); t.appendChild(thead);
       var tb = el('tbody');
@@ -341,7 +341,7 @@
         var tr = el('tr');
         var bidder = (h.bidderSeat != null) ? seatName(h.bidderSeat) : '';
         tr.appendChild(el('td', null,
-          h.handNo + (h.trump ? '  ' + SUIT[h.trump] : '') + (bidder ? ' ' + bidder : '')));
+          h.bid + (h.trump ? '  ' + SUIT[h.trump] : '') + (bidder ? ' ' + bidder : '')));
         sides.forEach(function (k) {
           var d = h.sides[k] ? h.sides[k].delta : 0;
           var td = el('td', d > 0 ? 'pos' : d < 0 ? 'neg' : null, (d > 0 ? '+' : '') + d);
