@@ -327,6 +327,16 @@ body {
   min-width: 30px; min-height: 40px;
   border-width: 2px; border-radius: 5px;
 }
+/* meld-preview cards: 50% larger than a plain mini tile */
+.tile.mini.big {
+  width: calc(var(--card) * 1.58);
+  height: calc(var(--card) * 2.18);
+  min-width: 46px; min-height: 62px;
+  border-radius: 6px;
+}
+.tile.mini.big .r { font-size: calc(var(--card) * 1.5); }
+.tile.mini.big .s { font-size: calc(var(--card) * 1.28); }
+.tile.mini.big.ten .r { font-size: calc(var(--card) * .9); }
 
 /* chat */
 .chat {

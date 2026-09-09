@@ -75,6 +75,7 @@
     var suit = code.charAt(1);
     if (RED[suit]) b.classList.add('red');
     if (opts.mini) b.classList.add('mini');
+    if (opts.big) b.classList.add('big');
     if (code.charAt(0) === 'T') b.classList.add('ten');
     if (opts.down) { b.classList.add('down'); return b; }
     b.appendChild(el('span', 'r', rankLabel(code.charAt(0))));
@@ -693,7 +694,7 @@
         codes.sort(sortCard);
 
         var cw = el('div', 'meld-cards');
-        codes.forEach(function (c) { cw.appendChild(cardTile(c, { mini: true })); });
+        codes.forEach(function (c) { cw.appendChild(cardTile(c, { mini: true, big: true })); });
         item.appendChild(cw);
 
         var key = snap.handNo + ':' + seat;
