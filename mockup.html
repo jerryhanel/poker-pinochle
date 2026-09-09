@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poker Pinochle Table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+
+  :root {
+    /* score-pad side — a cool, green-biased paper, not warm cream */
+    --pad:        #e9ede4;
+    --pad-panel:  #f2f5ec;
+    --pad-raise:  #fdfdfa;
+    --pad-line:   #c3ccba;
+    --ink:        #1b201c;
+    --ink-soft:   #5b6257;
+    /* the felt */
+    --baize:      #20493a;
+    --baize-deep: #163829;
+    --baize-line: rgba(255,255,255,.14);
+    --felt-ink:   #f4f0e4;
+    --felt-soft:  rgba(244,240,228,.72);
+    /* card tiles — always a light face, both themes */
+    --tile:       #fbfaf4;
+    --tile-edge:  #23281f;
+    --tile-shadow:rgba(18,28,22,.30);
+    --suit-red:   #c22a24;
+    --suit-black: #171a20;
+    /* card-room brass — the one bold hue */
+    --brass:      #a9791f;
+    --brass-bright:#d7a343;
+    --brass-ink:  #33240a;
+    /* semantic, separate from the accent */
+    --made:       #2c7a4e;
+    --set:        #b23a2f;
+
+    --rail-w: clamp(340px, 30vw, 440px);
+    --score-w: clamp(232px, 19vw, 312px);
+    --card: 32px;
+    --f-display: 'Archivo', system-ui, -apple-system, sans-serif;
+    --f-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --pad:        #181d19;
+      --pad-panel:  #212823;
+      --pad-raise:  #2b332c;
+      --pad-line:   #39423a;
+      --ink:        #e8e9df;
+      --ink-soft:   #9aa093;
+      --baize:      #173c2e;
+      --baize-deep: #0f2a20;
+      --baize-line: rgba(255,255,255,.12);
+      --tile:       #f8f6ef;
+      --tile-edge:  #12161a;
+      --tile-shadow:rgba(0,0,0,.45);
+      --brass:      #c69235;
+      --brass-bright:#e6b354;
+      --brass-ink:  #2a1e06;
+      --made:       #43a06a;
+      --set:        #d4574b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --pad:        #181d19;
+    --pad-panel:  #212823;
+    --pad-raise:  #2b332c;
+    --pad-line:   #39423a;
+    --ink:        #e8e9df;
+    --ink-soft:   #9aa093;
+    --baize:      #173c2e;
+    --baize-deep: #0f2a20;
+    --baize-line: rgba(255,255,255,.12);
+    --tile:       #f8f6ef;
+    --tile-edge:  #12161a;
+    --tile-shadow:rgba(0,0,0,.45);
+    --brass:      #c69235;
+    --brass-bright:#e6b354;
+    --brass-ink:  #2a1e06;
+    --made:       #43a06a;
+    --set:        #d4574b;
+  }
+
+  body {
+    margin: 0;
+    background: var(--baize);
+    color: var(--ink);
+    font-family: var(--f-display);
+    font-size: 18px;
+    line-height: 1.4;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .app {
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: var(--rail-w) 1fr var(--score-w);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "menu menu menu"
+      "rail table score";
+    overflow: hidden;
+  }
+
+  /* ---------- menu bar ---------- */
+  .menubar {
+    grid-area: menu;
+    display: flex;
+    align-items: center;
+    gap: clamp(10px, 2vw, 26px);
+    padding: 10px 16px;
+    background: var(--pad);
+    border-bottom: 2px solid var(--pad-line);
+    color: var(--ink);
+  }
+  .wordmark {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 800; font-size: 19px; letter-spacing: .01em;
+  }
+  .wordmark .pip {
+    display: inline-flex; gap: 2px; color: var(--brass);
+    font-size: 14px;
+  }
+  .menus { display: flex; gap: 2px; }
+  .menu-wrap { position: relative; }
+  .menu-wrap > button {
+    font: inherit; font-weight: 600;
+    border: 0; background: transparent; color: inherit;
+    padding: 8px 12px; border-radius: 7px; cursor: pointer;
+  }
+  .menu-wrap > button:hover,
+  .menu-wrap > button[aria-expanded="true"] { background: rgba(128,128,128,.16); }
+  .menu-pop {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    min-width: 210px; padding: 6px;
+    background: var(--pad-raise);
+    border: 2px solid var(--pad-line);
+    border-radius: 11px;
+    box-shadow: 0 14px 34px rgba(0,0,0,.28);
+  }
+  .menu-pop button {
+    display: block; width: 100%; text-align: left;
+    font: inherit; font-size: 15px; color: var(--ink);
+    border: 0; background: transparent;
+    padding: 9px 12px; border-radius: 7px; cursor: pointer;
+  }
+  .menu-pop button:hover { background: var(--brass); color: var(--brass-ink); }
+  .menu-pop hr { border: 0; border-top: 1px solid var(--pad-line); margin: 5px 4px; }
+
+  .cardsize {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cardsize-label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--ink-soft);
+  }
+  .cardsize button {
+    min-width: 46px; min-height: 42px;
+    font-family: var(--f-mono); font-weight: 700; font-size: 15px;
+    color: var(--ink);
+    border: 2px solid var(--pad-line); border-radius: 9px;
+    background: var(--pad-raise); cursor: pointer;
+  }
+  .cardsize button[aria-pressed="true"] {
+    background: var(--brass); color: var(--brass-ink); border-color: var(--brass);
+  }
+  .cardsize button:focus-visible,
+  .menu-wrap > button:focus-visible {
+    outline: 3px solid var(--brass-bright); outline-offset: 2px;
+  }
+
+  /* ---------- left rail: hands + chat ---------- */
+  .rail {
+    grid-area: rail;
+    background: var(--pad);
+    border-right: 2px solid var(--pad-line);
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+    color: var(--ink);
+  }
+  .rail-h {
+    margin: 0;
+    font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .16em;
+    color: var(--ink-soft);
+    padding: 13px 16px 7px;
+  }
+
+  /* hands */
+  .hands {
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    flex: 0 1 auto; max-height: 52%;
+    border-bottom: 2px solid var(--pad-line);
+  }
+  .team-tab {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 7px 16px;
+    font-weight: 800; font-size: 13px;
+    text-transform: uppercase; letter-spacing: .09em;
+  }
+  .team-tab.t1 { background: rgba(169,121,31,.16); }
+  .team-tab.t2 { background: rgba(32,73,58,.16); }
+  .team-score { font-family: var(--f-mono); font-size: 16px; font-weight: 700; }
+  .team-score.neg { color: var(--set); }
+  .team-score.pos { color: var(--made); }
+
+  .player {
+    padding: 10px 16px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    border-top: 1px solid var(--pad-line);
+  }
+  .player.active {
+    background: var(--pad-raise);
+    box-shadow: inset 5px 0 0 var(--brass);
+  }
+  .p-name {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-weight: 700; font-size: 17px;
+  }
+  .badge {
+    font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .09em;
+    padding: 2px 7px; border-radius: 6px;
+  }
+  .badge.you   { background: var(--brass); color: var(--brass-ink); }
+  .badge.bid   { background: var(--baize); color: var(--felt-ink); }
+  .badge.deal  { background: transparent; color: var(--ink-soft); border: 1px solid var(--pad-line); }
+  .badge.turn  { background: var(--brass-ink); color: var(--brass-bright); }
+
+  .p-cards { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-end; }
+  .p-cards.down { gap: 0; align-items: center; }
+  .p-cards.down .tile { margin-right: -16px; }
+  .count {
+    font-family: var(--f-mono); font-weight: 700; font-size: 15px;
+    margin-left: 26px; color: var(--ink-soft);
+  }
+
+  /* card tile */
+  .tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .04em;
+    min-width: 44px; min-height: 58px;
+    width: calc(var(--card) * 1.7);
+    height: calc(var(--card) * 2.3);
+    padding: 0;
+    background: var(--tile);
+    border: 3px solid var(--tile-edge);
+    border-radius: 7px;
+    box-shadow: 0 2px 5px var(--tile-shadow);
+    font-family: var(--f-display);
+    color: var(--suit-black);
+    line-height: 1;
+    cursor: pointer;
+  }
+  .tile .r { font-size: calc(var(--card) * 1.02); font-weight: 800; }
+  .tile .s { font-size: calc(var(--card) * .86); font-weight: 700; font-variant-emoji: text; }
+  .tile.red .r, .tile.red .s { color: var(--suit-red); }
+  .tile.legal {
+    border-color: var(--brass);
+    box-shadow: 0 0 0 3px rgba(169,121,31,.4), 0 3px 8px var(--tile-shadow);
+    transform: translateY(-4px);
+  }
+  .tile[disabled], .tile.blocked {
+    cursor: not-allowed;
+    opacity: .32;
+    filter: grayscale(1);
+  }
+  .tile:focus-visible { outline: 3px solid var(--brass-bright); outline-offset: 2px; }
+  .tile.down {
+    background: repeating-linear-gradient(45deg, var(--baize), var(--baize) 5px, var(--baize-deep) 5px, var(--baize-deep) 10px);
+    border-color: var(--baize-deep);
+    box-shadow: 0 1px 3px var(--tile-shadow);
+    cursor: default;
+  }
+  .tile.mini {
+    width: calc(var(--card) * 1.05);
+    height: calc(var(--card) * 1.45);
+    min-width: 30px; min-height: 40px;
+    border-width: 2px; border-radius: 5px;
+  }
+
+  /* chat */
+  .chat {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .bubbles {
+    flex: 1; overflow-y: auto;
+    padding: 4px 16px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .bub {
+    max-width: 82%;
+    padding: 8px 12px; border-radius: 13px;
+    font-size: 15px; line-height: 1.35;
+  }
+  .bub .nm {
+    display: block; font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .07em;
+    color: var(--ink-soft); margin-bottom: 2px;
+  }
+  .bub.them { align-self: flex-start; background: var(--pad-panel); border: 1px solid var(--pad-line); }
+  .bub.me   { align-self: flex-end; background: var(--brass); color: var(--brass-ink); }
+  .bub.me .nm { color: var(--brass-ink); opacity: .75; }
+  .bub.sys {
+    align-self: center; max-width: 100%;
+    background: transparent; color: var(--ink-soft);
+    font-size: 13px; font-style: italic; text-align: center;
+  }
+
+  .composer {
+    display: flex; gap: 8px;
+    padding: 10px 16px;
+    border-top: 2px solid var(--pad-line);
+  }
+  .composer input {
+    flex: 1; min-width: 0;
+    font: inherit; font-size: 16px;
+    padding: 10px 12px;
+    border: 2px solid var(--pad-line); border-radius: 9px;
+    background: var(--pad-raise); color: var(--ink);
+  }
+  .composer input:focus-visible {
+    outline: 3px solid var(--brass-bright); outline-offset: 1px;
+    border-color: var(--brass);
+  }
+  .composer button {
+    font: inherit; font-weight: 800;
+    padding: 10px 18px; min-height: 44px;
+    border: 0; border-radius: 9px;
+    background: var(--ink); color: var(--pad);
+    cursor: pointer;
+  }
+  .composer button:focus-visible { outline: 3px solid var(--brass-bright); outline-offset: 2px; }
+
+  /* ---------- the table ---------- */
+  .table {
+    grid-area: table;
+    position: relative;
+    background: radial-gradient(130% 90% at 50% -10%, var(--baize) 0%, var(--baize-deep) 100%);
+    color: var(--felt-ink);
+    display: flex; flex-direction: column;
+    gap: clamp(12px, 2vh, 22px);
+    padding: clamp(14px, 2vw, 28px);
+    overflow: hidden;
+  }
+
+  .status { display: flex; flex-direction: column; gap: 6px; }
+  .status-main {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    font-size: clamp(18px, 2.3vw, 26px); font-weight: 700;
+  }
+  .status-main .suit { font-size: 1.15em; font-variant-emoji: text; }
+  .status-main .mock {
+    font-size: 11px; font-weight: 800; letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--felt-soft);
+    border: 1px solid var(--baize-line); border-radius: 5px;
+    padding: 3px 7px;
+  }
+  .status-turn { font-size: clamp(15px, 1.6vw, 18px); color: var(--felt-soft); }
+
+  .meldstrip { display: flex; gap: 10px; flex-wrap: wrap; }
+  .meld-item {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,.22);
+    border: 1px solid var(--baize-line); border-radius: 10px;
+    padding: 8px 12px; font-size: 14px;
+  }
+  .meld-item .mp { font-family: var(--f-mono); font-weight: 700; color: var(--brass-bright); }
+  .meld-item em {
+    font-style: normal; text-transform: uppercase; letter-spacing: .08em;
+    font-size: 11px; color: var(--felt-soft);
+  }
+  .meld-item.feat { border-color: var(--brass); background: rgba(169,121,31,.2); }
+  .mini-tiles { display: flex; gap: 4px; }
+  .mini-tiles .tile { cursor: default; box-shadow: none; }
+
+  .felt {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(14px, 3vh, 30px);
+    text-align: center;
+  }
+  .played { display: flex; gap: clamp(10px, 2vw, 22px); align-items: flex-start; }
+  .pcard {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: .1em;
+    min-width: calc(var(--card) * 2.3);
+    padding: clamp(8px, 1.2vw, 14px);
+    background: var(--tile);
+    border: 3px solid var(--tile-edge); border-radius: 11px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.42);
+    color: var(--suit-black);
+    animation: deal .45s ease-out both;
+  }
+  .pcard:nth-child(2) { animation-delay: .07s; }
+  .pcard:nth-child(3) { animation-delay: .14s; }
+  .pcard:nth-child(4) { animation-delay: .21s; }
+  .pcard .r { font-size: calc(var(--card) * 1.6); font-weight: 800; line-height: 1; }
+  .pcard .s { font-size: calc(var(--card) * 1.28); font-variant-emoji: text; }
+  .pcard.red .r, .pcard.red .s { color: var(--suit-red); }
+  .pcard .who {
+    margin-top: .35em;
+    font-size: 13px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ink-soft);
+  }
+  .pcard .flag {
+    position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; font-weight: 800; letter-spacing: .1em;
+    background: var(--brass); color: var(--brass-ink);
+    padding: 2px 7px; border-radius: 4px;
+    white-space: nowrap;
+  }
+  .pcard.lead { border-color: var(--brass); }
+  .pcard.ghost {
+    background: transparent;
+    border: 3px dashed var(--baize-line);
+    box-shadow: none;
+    color: var(--felt-soft);
+    justify-content: center;
+    font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+  }
+  @keyframes deal {
+    from { opacity: 0; transform: translateX(-46px) translateY(12px) rotate(-4deg); }
+    to   { opacity: 1; transform: none; }
+  }
+  .trick-meta {
+    font-family: var(--f-mono); font-size: 13px;
+    color: var(--felt-soft);
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+  }
+  .felt-hint {
+    max-width: 54ch;
+    font-size: clamp(15px, 1.7vw, 19px); line-height: 1.45;
+    color: var(--felt-ink);
+    background: rgba(0,0,0,.24);
+    border-left: 4px solid var(--brass);
+    padding: 10px 16px; border-radius: 10px;
+  }
+
+  .turnbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 18px; flex-wrap: wrap;
+    background: linear-gradient(var(--brass), #8f6417);
+    color: var(--brass-ink);
+    border-radius: 14px;
+    padding: clamp(12px, 1.8vh, 20px) clamp(16px, 2vw, 28px);
+    box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    animation: pulse 2.6s ease-in-out infinite;
+  }
+  .tb-text {
+    font-size: clamp(17px, 2vw, 24px); font-weight: 800;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .tb-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .act {
+    display: flex; align-items: center; gap: 8px;
+    font: inherit; font-family: var(--f-display); font-weight: 800;
+    font-size: clamp(16px, 1.8vw, 20px);
+    padding: 12px 20px; min-height: 52px;
+    border: 3px solid var(--brass-ink); border-radius: 10px;
+    background: transparent; color: var(--brass-ink);
+    cursor: pointer;
+  }
+  .act .s { font-size: 1.2em; font-variant-emoji: text; }
+  .act .s.red { color: var(--suit-red); }
+  .act.primary { background: var(--brass-ink); color: var(--brass-bright); }
+  .act:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+    50%      { box-shadow: 0 6px 32px rgba(215,163,67,.55); }
+  }
+
+  /* ---------- far-right score pad ---------- */
+  .scorepanel {
+    grid-area: score;
+    background: var(--pad);
+    border-left: 2px solid var(--pad-line);
+    display: flex; flex-direction: column;
+    min-height: 0; overflow-y: auto;
+    color: var(--ink);
+  }
+  .sp-body {
+    padding: 4px 18px 22px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+
+  .bid-card {
+    background: var(--baize);
+    color: var(--felt-ink);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .bid-card .k {
+    font-size: 11px; font-weight: 800; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--felt-soft);
+  }
+  .bid-card .v { display: flex; align-items: baseline; gap: 10px; font-weight: 700; }
+  .bid-card .v .who { font-size: 19px; }
+  .bid-card .v b { font-family: var(--f-mono); font-size: 34px; line-height: 1; }
+  .bid-card .v .suit { font-size: 28px; font-variant-emoji: text; }
+  .bid-card .sub {
+    font-family: var(--f-mono); font-size: 12px; color: var(--felt-soft);
+    letter-spacing: .02em;
+  }
+
+  .journal-wrap { overflow-x: auto; }
+  table.journal {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--f-mono); font-size: 16px;
+  }
+  .journal caption {
+    text-align: left; padding: 0 0 6px;
+    font-size: 11px; font-weight: 800; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-soft);
+  }
+  .journal th {
+    text-align: right; padding: 5px 8px;
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 2px solid var(--pad-line);
+  }
+  .journal th:first-child { text-align: left; }
+  .journal td {
+    text-align: right; padding: 8px;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--pad-line);
+  }
+  .journal td:first-child { text-align: left; color: var(--ink-soft); }
+  .journal .pos  { color: var(--made); font-weight: 700; }
+  .journal .neg  { color: var(--set); font-weight: 700; }
+  .journal .prog { color: var(--brass); font-weight: 700; }
+  .journal tr.total td {
+    border-bottom: 0; border-top: 2px solid var(--pad-line);
+    font-size: 26px; font-weight: 700; padding-top: 10px;
+  }
+
+  .sp-totals { display: flex; gap: 10px; }
+  .sp-tot {
+    flex: 1;
+    border: 2px solid var(--pad-line); border-radius: 11px;
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .sp-tot.lead { border-color: var(--brass); background: rgba(169,121,31,.1); }
+  .sp-tot .k {
+    font-size: 10px; font-weight: 800; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-soft);
+  }
+  .sp-tot .n {
+    font-family: var(--f-mono); font-size: 30px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .sp-tot .n.pos { color: var(--made); }
+  .sp-tot .n.neg { color: var(--set); }
+  .sp-goal {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--ink-soft); text-align: center;
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: var(--pad);
+    font-size: 14px; font-weight: 600;
+    padding: 10px 16px; border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+    z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1180px) {
+    .app {
+      height: auto; min-height: 100dvh;
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto 1fr auto;
+      grid-template-areas:
+        "menu"
+        "rail"
+        "table"
+        "score";
+    }
+    .rail { border-right: 0; border-bottom: 2px solid var(--pad-line); }
+    .hands { max-height: none; }
+    .table { min-height: 68vh; }
+    .scorepanel { border-left: 0; border-top: 2px solid var(--pad-line); }
+    .sp-body { max-width: 720px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .tile.legal { transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="menubar">
+    <div class="wordmark">Poker&nbsp;Pinochle <span class="pip">&#9824;&#9827;</span></div>
+
+    <nav class="menus" aria-label="Main menu">
+      <div class="menu-wrap">
+        <button type="button" aria-haspopup="true" aria-expanded="false" data-menu="file">File</button>
+        <div class="menu-pop" data-pop="file" hidden>
+          <button type="button">New game&hellip;</button>
+          <button type="button">Join game by code&hellip;</button>
+          <button type="button">Leave table</button>
+          <hr>
+          <button type="button">Sign out</button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button type="button" aria-haspopup="true" aria-expanded="false" data-menu="help">Help</button>
+        <div class="menu-pop" data-pop="help" hidden>
+          <button type="button">How to play</button>
+          <button type="button">Meld &amp; scoring reference</button>
+          <hr>
+          <button type="button">About this table</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="cardsize" role="group" aria-label="Card size">
+      <span class="cardsize-label">Card size</span>
+      <button type="button" data-size="24" aria-pressed="false">24</button>
+      <button type="button" data-size="32" aria-pressed="true">32</button>
+      <button type="button" data-size="40" aria-pressed="false">40</button>
+    </div>
+  </header>
+
+  <!-- LEFT: hands + chat -->
+  <aside class="rail">
+    <h2 class="rail-h">Hands</h2>
+    <section class="hands" aria-label="Players and hands">
+      <div class="team-tab t1">Team 1 <span class="team-score pos">21</span></div>
+
+      <div class="player active">
+        <div class="p-name">
+          Jerry <span class="badge you">you</span> <span class="badge turn">your turn</span>
+        </div>
+        <div class="p-cards" aria-label="Your hand, 4 cards">
+          <button class="tile legal" type="button" aria-label="King of spades — legal play">
+            <span class="r">K</span><span class="s">&#9824;</span>
+          </button>
+          <button class="tile legal" type="button" aria-label="Queen of spades — legal play">
+            <span class="r">Q</span><span class="s">&#9824;</span>
+          </button>
+          <button class="tile red blocked" type="button" disabled aria-label="Ace of diamonds — blocked, you must follow spades">
+            <span class="r">A</span><span class="s">&#9830;</span>
+          </button>
+          <button class="tile red blocked" type="button" disabled aria-label="Nine of hearts — blocked, you must follow spades">
+            <span class="r">9</span><span class="s">&#9829;</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="player">
+        <div class="p-name">Mom</div>
+        <div class="p-cards down" aria-label="Mom's hand, 3 cards face down">
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="count">3</span>
+        </div>
+      </div>
+
+      <div class="team-tab t2">Team 2 <span class="team-score neg">&minus;15</span></div>
+
+      <div class="player">
+        <div class="p-name">Cheryl <span class="badge bid">bid 13</span></div>
+        <div class="p-cards down" aria-label="Cheryl's hand, 3 cards face down">
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="count">3</span>
+        </div>
+      </div>
+
+      <div class="player">
+        <div class="p-name">Dad <span class="badge deal">dealer</span></div>
+        <div class="p-cards down" aria-label="Dad's hand, 3 cards face down">
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="tile down mini" aria-hidden="true"></span>
+          <span class="count">3</span>
+        </div>
+      </div>
+    </section>
+
+    <h2 class="rail-h">Chat</h2>
+    <section class="chat" aria-label="Table chat">
+      <div class="bubbles" id="bubbles">
+        <div class="bub them"><span class="nm">Mom</span>good luck everyone</div>
+        <div class="bub them"><span class="nm">Dad</span>you&rsquo;ll need it against my jacks</div>
+        <div class="bub sys">Cheryl won the bid &mdash; 13, spades</div>
+        <div class="bub them"><span class="nm">Cheryl</span>taking it for 13, partner carry me</div>
+        <div class="bub me"><span class="nm">Jerry</span>pinochle&rsquo;s already down, we&rsquo;re fine</div>
+      </div>
+    </section>
+    <form class="composer" id="composer">
+      <input type="text" id="chatInput" placeholder="Message the table&hellip;" aria-label="Chat message" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </aside>
+
+  <!-- CENTER: the table -->
+  <main class="table" aria-label="The table">
+    <div class="status">
+      <div class="status-main">
+        <span>Trick 2 of 5</span>
+        <span>Trump <span class="suit">&#9824;</span></span>
+        <span>Cheryl&rsquo;s bid: 13</span>
+        <span class="mock">Mockup &middot; sample game</span>
+      </div>
+      <div class="status-turn">Cheryl leads &mdash; you play last this trick.</div>
+    </div>
+
+    <div class="meldstrip" aria-label="Meld laid this hand">
+      <div class="meld-item feat">
+        <span class="mini-tiles">
+          <span class="tile mini"><span class="r">Q</span><span class="s">&#9824;</span></span>
+          <span class="tile mini red"><span class="r">J</span><span class="s">&#9830;</span></span>
+        </span>
+        Jerry <span class="mp">+4</span> <em>Pinochle</em>
+      </div>
+      <div class="meld-item">Mom <span class="mp">+0</span></div>
+      <div class="meld-item">Cheryl <span class="mp">+5</span> <em>&#9824; marriage &middot; 9&#9824;</em></div>
+      <div class="meld-item">Dad <span class="mp">+4</span> <em>four jacks</em></div>
+    </div>
+
+    <div class="felt">
+      <div class="played" aria-label="Cards played to the current trick">
+        <div class="pcard lead">
+          <span class="flag">Led &middot; winning</span>
+          <span class="r">A</span><span class="s">&#9824;</span>
+          <span class="who">Cheryl</span>
+        </div>
+        <div class="pcard">
+          <span class="r">T</span><span class="s">&#9824;</span>
+          <span class="who">Mom</span>
+        </div>
+        <div class="pcard">
+          <span class="r">9</span><span class="s">&#9824;</span>
+          <span class="who">Dad</span>
+        </div>
+        <div class="pcard ghost">your<br>card</div>
+      </div>
+
+      <div class="trick-meta">
+        <span>2 counters at stake (A&#9824; + T&#9824;)</span>
+        <span>&bull;</span>
+        <span>Team 2 is winning this trick</span>
+      </div>
+
+      <p class="felt-hint">
+        Cheryl led the <strong>A&#9824;</strong>. You must follow spades, and beat the
+        highest spade if you can &mdash; you can&rsquo;t top the ace, so play a low spade.
+        Melded cards stay in your hand and get played like any other.
+      </p>
+    </div>
+
+    <div class="turnbar" role="status">
+      <div class="tb-text">Your play &mdash; follow &#9824;</div>
+      <div class="tb-actions">
+        <button class="act primary" type="button" data-play="Q&#9824;">Play <span class="s">Q&#9824;</span></button>
+        <button class="act" type="button" data-play="K&#9824;">Play <span class="s">K&#9824;</span></button>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT: full-height score pad -->
+  <aside class="scorepanel" aria-label="Running score">
+    <h2 class="rail-h">Score</h2>
+    <div class="sp-body">
+      <div class="bid-card">
+        <span class="k">This hand &mdash; the bid</span>
+        <span class="v"><span class="who">Cheryl</span> <b>13</b> <span class="suit">&#9824;</span></span>
+        <span class="sub">meld laid &middot; T1 +4 &nbsp; T2 +9</span>
+      </div>
+
+      <div class="journal-wrap">
+        <table class="journal">
+          <caption>Hand-by-hand</caption>
+          <thead>
+            <tr><th>Hand</th><th>Team&nbsp;1</th><th>Team&nbsp;2</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td class="pos">+21</td><td>0</td></tr>
+            <tr><td>2</td><td>0</td><td class="neg">&minus;15</td></tr>
+            <tr><td>3 &middot; now</td><td class="prog">&hellip;</td><td class="prog">&hellip;</td></tr>
+          </tbody>
+          <tfoot>
+            <tr class="total"><td>Total</td><td>21</td><td>&minus;15</td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="sp-totals">
+        <div class="sp-tot lead">
+          <span class="k">Team 1</span>
+          <span class="n pos">21</span>
+        </div>
+        <div class="sp-tot">
+          <span class="k">Team 2</span>
+          <span class="n neg">&minus;15</span>
+        </div>
+      </div>
+      <div class="sp-goal">Game to 50</div>
+    </div>
+  </aside>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var toastEl = document.getElementById('toast');
+    var toastTimer;
+
+    function toast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2400);
+    }
+
+    /* ----- card size, persisted per viewer ----- */
+    var sizeButtons = Array.prototype.slice.call(document.querySelectorAll('.cardsize button'));
+    function applySize(px, save) {
+      root.style.setProperty('--card', px + 'px');
+      sizeButtons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.size === String(px) ? 'true' : 'false');
+      });
+      if (save) {
+        try { localStorage.setItem('pp-card-size', String(px)); } catch (e) {}
+      }
+    }
+    var saved = 32;
+    try {
+      var v = parseInt(localStorage.getItem('pp-card-size'), 10);
+      if (v === 24 || v === 32 || v === 40) saved = v;
+    } catch (e) {}
+    applySize(saved, false);
+    sizeButtons.forEach(function (b) {
+      b.addEventListener('click', function () { applySize(parseInt(b.dataset.size, 10), true); });
+    });
+
+    /* ----- menu bar (illustrative) ----- */
+    var wraps = Array.prototype.slice.call(document.querySelectorAll('.menu-wrap'));
+    function closeMenus(except) {
+      wraps.forEach(function (w) {
+        if (w === except) return;
+        w.querySelector('button').setAttribute('aria-expanded', 'false');
+        w.querySelector('.menu-pop').hidden = true;
+      });
+    }
+    wraps.forEach(function (w) {
+      var btn = w.querySelector('button');
+      var pop = w.querySelector('.menu-pop');
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var open = btn.getAttribute('aria-expanded') === 'true';
+        closeMenus(w);
+        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+        pop.hidden = open;
+      });
+      pop.addEventListener('click', function (e) {
+        var t = e.target.closest('button');
+        if (!t) return;
+        toast('Mockup — "' + t.textContent.replace(/[…–].*$/, '').trim() + '" isn’t wired up yet');
+        closeMenus(null);
+      });
+    });
+    document.addEventListener('click', function () { closeMenus(null); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenus(null); });
+
+    /* ----- play buttons (illustrative) ----- */
+    Array.prototype.slice.call(document.querySelectorAll('.act')).forEach(function (b) {
+      b.addEventListener('click', function () {
+        toast('Mockup — this would send your card to the server, which deals it to the felt.');
+      });
+    });
+
+    /* ----- chat: local echo so the demo feels alive ----- */
+    var composer = document.getElementById('composer');
+    var input = document.getElementById('chatInput');
+    var bubbles = document.getElementById('bubbles');
+    composer.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var text = input.value.trim();
+      if (!text) return;
+      var b = document.createElement('div');
+      b.className = 'bub me';
+      var nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.textContent = 'Jerry';
+      b.appendChild(nm);
+      b.appendChild(document.createTextNode(text));
+      bubbles.appendChild(b);
+      bubbles.scrollTop = bubbles.scrollHeight;
+      input.value = '';
+    });
+    bubbles.scrollTop = bubbles.scrollHeight;
+  })();
+</script>
+</body>
+</html>
