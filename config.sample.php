@@ -31,4 +31,18 @@ return [
         'pass' => 'CHANGE_ME',
         'name' => 'poker_pinochle',
     ],
+
+    // Self-hosted Soketi (Pusher protocol).
+    //   scheme/host/port : server -> Soketi HMAC trigger hop (LAN http is fine)
+    //   app_id/key/secret: the Soketi app
+    //   ws_url           : browser-facing wss:// endpoint for the client
+    'soketi' => [
+        'scheme' => 'http',
+        'host'   => '192.168.8.218',
+        'port'   => 6001,
+        'app_id' => 'CHANGE_ME',
+        'key'    => 'CHANGE_ME',
+        'secret' => 'CHANGE_ME',
+        'ws_url' => '',
+    ],
 ];

@@ -147,6 +147,27 @@ if (isset($_GET['db'])) {
 }
 
 // ===========================================================================
+// ?soketi=1 — fire a real broadcast through the trigger and report
+// ===========================================================================
+if (isset($_GET['soketi'])) {
+    require __DIR__ . '/lib/pusher.php';
+    $cfg = pp_config()['soketi'] ?? [];
+    echo "\n== Soketi trigger ==\n";
+    echo "target: " . ($cfg['scheme'] ?? '?') . "://" . ($cfg['host'] ?? '?') . ":" . ($cfg['port'] ?? '?')
+        . "  app=" . ($cfg['app_id'] ?? '?') . "\n";
+
+    $me = pp_current_user();
+    $r  = pp_broadcast('pp-lobby', 'dev-ping', [
+        'from' => $me['name'],
+        'at'   => date('c'),
+        'note' => 'poker-pinochle dev.php?soketi=1',
+    ]);
+    echo json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    echo ($r['ok'] ? "SOKETI TRIGGER OK (published to pp-lobby)\n" : "SOKETI TRIGGER FAILED\n");
+    exit($r['ok'] ? 0 : 1);
+}
+
+// ===========================================================================
 // ?api=1 — drive the Api layer end to end (no HTTP; direct calls)
 // ===========================================================================
 if (isset($_GET['api'])) {
