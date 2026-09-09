@@ -379,10 +379,11 @@ body {
   display: flex; flex-direction: column;
   gap: clamp(12px, 2vh, 22px);
   padding: clamp(14px, 2vw, 28px);
-  overflow: hidden;
+  overflow-y: auto;      /* scroll the centre when a hand overflows */
+  overflow-x: hidden;
 }
 
-.status { display: flex; flex-direction: column; gap: 6px; }
+.status { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
 .status-main {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   font-size: clamp(18px, 2.3vw, 26px); font-weight: 700;
@@ -419,7 +420,7 @@ body {
 .mini-tiles .tile { cursor: default; box-shadow: none; }
 
 .felt {
-  flex: 1; min-height: 0;
+  flex: 1 0 auto;   /* fill spare space, but grow past it (parent scrolls) rather than clip */
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: clamp(14px, 3vh, 30px);
   text-align: center;
