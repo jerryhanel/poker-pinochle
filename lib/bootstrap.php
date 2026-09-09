@@ -48,7 +48,7 @@ function h(?string $s): string
 }
 
 /** Send a JSON response and stop. Used by the API endpoints later. */
-function pp_json($data, int $status = 200): never
+function pp_json($data, int $status = 200): void
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
