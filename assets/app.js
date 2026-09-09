@@ -19,6 +19,7 @@
   var chatSince = 0;
   var pollTimer = null;
   var busy = false;         // an action POST is in flight
+  var showWon = false;      // "cards won so far" panel toggled open
 
   try { GAME = localStorage.getItem('pp-game') || null; } catch (e) {}
 
@@ -97,6 +98,7 @@
       (s.trick && s.trick.plays.length) || 0,
       (s.auction && s.auction.log.length) || 0,
       (s.journal && s.journal.length) || 0,
+      (s.ready && s.ready.length) || 0,
       s.seats.filter(function (x) { return x.uuid; }).length
     ].join('|');
   }
@@ -496,6 +498,12 @@
 
   function feltPlay(f) {
     meldStrip(f);
+
+    var wonBtn = el('button', 'act ghost-btn', showWon ? 'Hide cards won' : 'Review cards won so far');
+    wonBtn.addEventListener('click', function () { showWon = !showWon; render(); });
+    f.appendChild(wonBtn);
+    if (showWon) capturedPanel(f);
+
     var played = el('div', 'played');
     var plays = (snap.trick && snap.trick.plays) || [];
     if (!plays.length && snap.lastTrick) {
@@ -535,16 +543,78 @@
       r.made ? (bidderName + ' MADE ' + r.biddingTotal) : (bidderName + ' SET −' + r.bid)));
     box.appendChild(el('p', 'felt-hint',
       'bid ' + r.bid + ' · meld ' + sideList(snap.meldBySide || {}) + ' · counters ' + sideList(snap.countersBySide || {})));
-    if (snap.gameOver) {
-      box.appendChild(el('div', 'big made', (snap.mode === 'teams' ? 'Team ' + (snap.gameWinner + 1) : seatName(snap.gameWinner)) + ' wins!'));
-    } else if (amHost()) {
-      var b = el('button', 'act primary', 'Deal the next hand');
-      b.addEventListener('click', function () { act(api('start.php', { game: GAME })); });
-      box.appendChild(b);
-    } else {
-      box.appendChild(el('p', 'lobby-wait', 'Waiting for the host to deal the next hand.'));
-    }
     f.appendChild(box);
+
+    // captured piles — always visible at hand end for verification
+    capturedPanel(f);
+
+    if (snap.gameOver) {
+      f.appendChild(el('div', 'big made',
+        (snap.mode === 'teams' ? 'Team ' + (snap.gameWinner + 1) : seatName(snap.gameWinner)) + ' wins the game!'));
+      return;
+    }
+
+    var ready = snap.ready || [];
+    var need = snap.readyNeeded || [];
+    var me = mySeat();
+    var meReady = me != null && ready.indexOf(me) >= 0;
+
+    var rr = el('div', 'ready-row');
+    rr.appendChild(el('div', 'ready-count', 'Ready: ' + ready.length + ' / ' + need.length));
+    rr.appendChild(el('div', 'ready-names', need.map(function (s) {
+      return (ready.indexOf(s) >= 0 ? '✓ ' : '· ') + seatName(s);
+    }).join('    ')));
+    f.appendChild(rr);
+
+    if (!meReady) {
+      var rb = el('button', 'act primary', 'Ready for New Hand');
+      rb.addEventListener('click', function () { act(api('ready.php', { game: GAME })); });
+      f.appendChild(rb);
+    } else {
+      f.appendChild(el('p', 'lobby-wait', 'You’re ready — waiting for the rest of the table.'));
+    }
+
+    if (amHost()) {
+      var allReady = need.length > 0 && need.every(function (s) { return ready.indexOf(s) >= 0; });
+      var db = el('button', 'act' + (allReady ? ' primary' : ''), 'Deal the next hand');
+      db.disabled = !allReady;
+      db.addEventListener('click', function () { act(api('start.php', { game: GAME })); });
+      f.appendChild(db);
+    }
+  }
+
+  function sortCard(a, b) {
+    var so = 'SHDC', ro = '9JQKTA';
+    var d = so.indexOf(a.charAt(1)) - so.indexOf(b.charAt(1));
+    return d || (ro.indexOf(a.charAt(0)) - ro.indexOf(b.charAt(0)));
+  }
+
+  function capturedPanel(host) {
+    if (!snap.capturedBySide) {
+      host.appendChild(el('p', 'lobby-wait', 'No tricks taken yet.'));
+      return;
+    }
+    var mine = (mySeat() != null && snap.seats[mySeat()]) ? snap.seats[mySeat()].sideNo : -1;
+    var wrap = el('div', 'won-panel');
+    Object.keys(snap.capturedBySide).forEach(function (k) {
+      var cards = snap.capturedBySide[k].slice().sort(sortCard);
+      var grp = el('div', 'won-group' + (+k === mine ? ' mine' : ''));
+      var head = el('div', 'won-head');
+      head.appendChild(el('span', null, snap.mode === 'teams' ? ('Team ' + (+k + 1)) : seatName(+k)));
+      var ctr = (snap.countersBySide && snap.countersBySide[k]) || 0;
+      head.appendChild(el('span', 'won-ctr', ctr + ' counter' + (ctr === 1 ? '' : 's')));
+      grp.appendChild(head);
+      var row = el('div', 'won-cards');
+      if (!cards.length) row.appendChild(el('span', 'won-none', 'nothing yet'));
+      cards.forEach(function (c) {
+        var t = cardTile(c, { mini: true });
+        if ('ATK'.indexOf(c.charAt(0)) >= 0) t.classList.add('counter');
+        row.appendChild(t);
+      });
+      grp.appendChild(row);
+      wrap.appendChild(grp);
+    });
+    host.appendChild(wrap);
   }
 
   function pcard(p, win, flag) {

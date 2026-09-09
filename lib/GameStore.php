@@ -183,6 +183,10 @@ final class GameStore
         $g->roster   = self::roster($db, $gameId);
         $g->journal  = self::journal($db, $gameId);
         $g->joinCode = $game['join_code'] ?? null;
+        if ($handRow && !empty($handRow['ready_json'])) {
+            $rl = json_decode((string) $handRow['ready_json'], true);
+            $g->readyList = is_array($rl) ? array_map('intval', $rl) : [];
+        }
 
         return $g;
     }

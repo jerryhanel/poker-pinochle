@@ -234,6 +234,17 @@ final class Api
                 if (!$g->hand || $g->hand['phase'] !== 'scored') {
                     throw new DomainException('Finish the current hand first.');
                 }
+                // every seated player must be ready
+                $need = [];
+                foreach ($g->roster as $seat => $p) {
+                    if (($p['connection'] ?? 'connected') !== 'left') {
+                        $need[] = (int) $seat;
+                    }
+                }
+                $missing = array_diff($need, $g->readyList);
+                if ($missing) {
+                    throw new DomainException('Waiting for all players to ready up (' . count($missing) . ' not ready).');
+                }
             } else {
                 throw new DomainException('This game is complete.');
             }
@@ -243,6 +254,41 @@ final class Api
         });
         self::announce($uuid);
         return $snap;
+    }
+
+    /** Mark the caller ready for the next hand (only meaningful once scored). */
+    public static function ready(array $user, array $a): array
+    {
+        $uuid = self::gameUuid($a);
+        pp_tx(function (mysqli $db) use ($user, $uuid) {
+            $g = GameStore::load($db, $uuid);
+            if ($g->isGameOver()) {
+                throw new DomainException('The game is over.');
+            }
+            if (!$g->hand || $g->hand['phase'] !== 'scored') {
+                throw new DomainException('Nothing to ready up for yet.');
+            }
+            $seat = self::seatOf($g, $user['uuid']);
+
+            $game = $db->query("SELECT id FROM game WHERE game_uuid = '" . $db->real_escape_string($uuid) . "'")->fetch_assoc();
+            $hid  = (int) $db->query("SELECT id FROM hand WHERE game_id = " . (int) $game['id'] . " ORDER BY hand_no DESC LIMIT 1")->fetch_assoc()['id'];
+            $cur  = $db->query("SELECT ready_json FROM hand WHERE id = {$hid}")->fetch_assoc()['ready_json'];
+            $list = $cur ? json_decode($cur, true) : [];
+            if (!is_array($list)) {
+                $list = [];
+            }
+            if (!in_array($seat, $list, true)) {
+                $list[] = $seat;
+            }
+            sort($list);
+            $j = json_encode(array_values($list));
+            $stmt = $db->prepare("UPDATE hand SET ready_json = ? WHERE id = ?");
+            $stmt->bind_param('si', $j, $hid);
+            $stmt->execute();
+        });
+        self::announce($uuid);
+        $g = GameStore::load(pp_db(), $uuid);
+        return GameStore::snapshotFor($g, $user['uuid']);
     }
 
     // ---- one endpoint per hand phase -----------------------------------

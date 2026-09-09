@@ -52,6 +52,9 @@ final class State
     /** @var string|null share code. Carried, set by GameStore::load. */
     public $joinCode = null;
 
+    /** @var int[] seats that have clicked "ready for the next hand". Carried. */
+    public $readyList = [];
+
     public function __construct(int $players, string $mode, array $rules = [])
     {
         if ($players < 2 || $players > 8) {
@@ -507,6 +510,29 @@ final class State
             $legalPlays = Trick::legalPlays($h['hands'][$viewerSeat], $h['trick']['plays'], $h['trump']);
         }
 
+        // cards captured in tricks so far, grouped by side (public — all played cards)
+        $capturedBySide = null;
+        if ($h && !empty($h['tricks'])) {
+            $capturedBySide = [];
+            foreach (array_keys($this->sides) as $s) {
+                $capturedBySide[$s] = [];
+            }
+            foreach ($h['tricks'] as $t) {
+                $side = $this->seatSide($t['winnerSeat']);
+                foreach ($t['plays'] as $p) {
+                    $capturedBySide[$side][] = $p['card'];
+                }
+            }
+        }
+
+        // seats still occupied (haven't left) — the set that must all ready up
+        $readyNeeded = [];
+        foreach ($this->roster as $seat => $p) {
+            if (($p['connection'] ?? 'connected') !== 'left') {
+                $readyNeeded[] = (int) $seat;
+            }
+        }
+
         return [
             'players'       => $this->players,
             'mode'          => $this->mode,
@@ -534,7 +560,10 @@ final class State
             'keepMin'       => (int) ($this->rules['keep_min'] ?? 0),
             'meld'          => ($h && !empty($h['meldRecord'])) ? $h['meldRecord'] : null,
             'lastTrick'     => ($h && !empty($h['tricks'])) ? $h['tricks'][count($h['tricks']) - 1] : null,
+            'capturedBySide'=> $capturedBySide,
             'journal'       => $this->journal,
+            'ready'         => array_values($this->readyList),
+            'readyNeeded'   => $readyNeeded,
             'seats'         => $seats,
         ];
     }

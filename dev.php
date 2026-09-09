@@ -241,16 +241,26 @@ if (isset($_GET['api'])) {
         echo "  scores " . json_encode($final['result']['handScores']) .
              "  running " . json_encode($final['result']['runningAfter']) . "\n";
 
-        // non-host cannot deal the next hand
+        // next hand is gated on every seated player readying up
+        try {
+            Api::start($me, ['game' => $uuid]);
+            $ok(false, 'deal blocked before everyone is ready');
+        } catch (DomainException $e) {
+            $ok(true, 'deal blocked before everyone is ready');
+        }
+        foreach ($users as $u) { Api::ready($u, ['game' => $uuid]); }
+        $rs = Api::game($me, ['game' => $uuid]);
+        $ok(count($rs['ready']) === 4, 'all four readied up');
+        $ok(is_array($rs['capturedBySide']) && count($rs['capturedBySide'][0]) + count($rs['capturedBySide'][1]) === 20,
+            'capturedBySide holds all 20 played cards');
         try {
             Api::start($bots[0], ['game' => $uuid]);
-            $ok(false, 'non-host next-hand rejected');
+            $ok(false, 'non-host deal rejected even when all ready');
         } catch (DomainException $e) {
-            $ok(true, 'non-host next-hand rejected');
+            $ok(true, 'non-host deal rejected even when all ready');
         }
-        // host deals hand 2 (previous hand is scored)
         $h2 = Api::start($me, ['game' => $uuid]);
-        $ok($h2['phase'] === 'auction' && $h2['handNo'] === 2, 'host deals hand 2 -> auction');
+        $ok($h2['phase'] === 'auction' && $h2['handNo'] === 2, 'host deals hand 2 once all ready');
 
         // chat
         Api::chatPost($me, ['game' => $uuid, 'text' => 'good game']);
