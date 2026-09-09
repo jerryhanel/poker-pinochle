@@ -84,6 +84,18 @@ function pp_valid_name(string $name): bool
     return (bool)preg_match("/^[\\p{L}\\p{N} _'\\-]{2,24}$/u", $name);
 }
 
+/** Random RFC-4122 v4 UUID (for game_uuid, hand ids, etc.). */
+function pp_uuid_v4(): string
+{
+    $b = random_bytes(16);
+    $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
+    $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
+    $h = bin2hex($b);
+    return sprintf('%s-%s-%s-%s-%s',
+        substr($h, 0, 8), substr($h, 8, 4), substr($h, 12, 4),
+        substr($h, 16, 4), substr($h, 20, 12));
+}
+
 /** @return array{uuid:string,name:string,since:int}|null */
 function pp_current_user(): ?array
 {

@@ -195,6 +195,45 @@ $bside = $g->hand['bidWinnerSideNo'];
 $expected = ($g->hand['tricksWonBySide'][$bside] >= 1 ? $g->hand['meldBySide'][$bside] : 0) + $g->hand['countersBySide'][$bside];
 ok($res['biddingTotal'] === $expected, 'bidding total = kept meld + counters captured');
 
+sec('State — serialise / restore mid-hand (Phase 2 round-trip)');
+$sr = new State(4, 'teams');
+$sr->startHand(Deck::shuffle(Deck::fresh(), 4242), 0);
+while ($sr->hand['phase'] === 'auction') { $sr->bid($sr->auctionTurnSeat(), 'pass'); }
+$sr->declareTrump($sr->hand['bidWinnerSeat'], 'H');
+while ($sr->hand['phase'] === 'draw') { $sr->draw($sr->drawTurnSeat(), []); }
+while ($sr->hand['phase'] === 'play' && count($sr->hand['tricks']) < 2) {
+    $s = $sr->playTurnSeat();
+    $sr->play($s, $sr->legalPlaysFor($s)[0]);
+}
+ok($sr->hand['phase'] === 'play' && count($sr->hand['tricks']) === 2, 'stopped mid-hand after 2 tricks');
+
+// serialise exactly what GameStore stores, then rebuild
+$blob = json_encode([
+    'players' => $sr->players, 'mode' => $sr->mode, 'rules' => $sr->rules,
+    'running' => $sr->running, 'handNo' => $sr->handNo,
+    'dealer' => $sr->dealerSeat, 'winner' => $sr->gameWinnerSideNo,
+    'hand' => $sr->exportHand(),
+]);
+$row = json_decode($blob, true);
+$rs = State::rebuild($row['players'], $row['mode'], $row['rules'], $row['running'], $row['handNo'], $row['dealer'], $row['winner']);
+$rs->importHand($row['hand']);
+
+ok($rs->playTurnSeat() === $sr->playTurnSeat(), 'restored: same seat on turn');
+ok($rs->legalPlaysFor($rs->playTurnSeat()) === $sr->legalPlaysFor($sr->playTurnSeat()), 'restored: identical legal plays');
+
+$finish = function (State $x) {
+    while ($x->hand['phase'] === 'play') {
+        $s = $x->playTurnSeat();
+        $x->play($s, $x->legalPlaysFor($s)[0]);
+    }
+    return $x;
+};
+$finish($sr);
+$finish($rs);
+ok($sr->handResult() == $rs->handResult(), 'restored state finishes to an identical result');
+ok(json_encode($sr->exportHand()) === json_encode($rs->exportHand()), 'hand state byte-identical after finishing from the restore point');
+ok($sr->running == $rs->running, 'running totals match after restore + finish');
+
 sec('State — a game runs to a target');
 $g2 = new State(4, 'teams');
 $hn = 0;

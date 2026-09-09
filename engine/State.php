@@ -43,6 +43,9 @@ final class State
 
     /** @var array|null current hand state */ public $hand = null;
 
+    /** @var array<int,array> seat_no => {uuid,name,sideNo,isHost,connection}. Carried, not used by the engine. */
+    public $roster = [];
+
     public function __construct(int $players, string $mode, array $rules = [])
     {
         if ($players < 2 || $players > 8) {
@@ -141,6 +144,7 @@ final class State
             'drawOrder'   => [],
             'drawPos'     => 0,
             'drawRecord'  => [],
+            'final'       => [],           // post-draw 5-card hands (set at meld)
             'meldRecord'  => [],
             'meldBySide'  => [],
             'tricks'      => [],
@@ -293,7 +297,9 @@ final class State
     private function enterMeld(): void
     {
         $this->hand['phase'] = 'meld';
+        $this->hand['final'] = [];
         foreach ($this->hand['hands'] as $seat => $cards) {
+            $this->hand['final'][$seat] = array_values($cards);   // the 5-card hand meld is read from
             $det = Meld::detect($cards, $this->hand['trump']);
             $this->hand['meldRecord'][$seat] = $det;
             $sideNo = $this->seatSide($seat);
@@ -424,6 +430,48 @@ final class State
     public function isGameOver(): bool
     {
         return $this->gameWinnerSideNo !== null;
+    }
+
+    // --------------------------------------------------------- persistence
+
+    /**
+     * The full in-flight hand state as plain arrays/scalars — safe to
+     * json_encode straight into hand.state_json. Null when no hand is active.
+     */
+    public function exportHand(): ?array
+    {
+        return $this->hand;
+    }
+
+    /** Restore a hand previously produced by exportHand() (json_decode assoc). */
+    public function importHand(?array $hand): void
+    {
+        $this->hand = $hand;
+    }
+
+    /**
+     * Rebuild the game-level shell (no hand) from stored columns. Pair with
+     * importHand() to fully restore a game in progress.
+     *
+     * @param array<int,int> $running  side_no => running score
+     */
+    public static function rebuild(
+        int $players,
+        string $mode,
+        array $rules,
+        array $running,
+        int $handNo,
+        ?int $dealerSeat,
+        ?int $gameWinnerSideNo
+    ): self {
+        $g = new self($players, $mode, $rules);
+        foreach ($running as $s => $v) {
+            $g->running[(int) $s] = (int) $v;
+        }
+        $g->handNo           = $handNo;
+        $g->dealerSeat       = $dealerSeat === null ? null : (int) $dealerSeat;
+        $g->gameWinnerSideNo = $gameWinnerSideNo === null ? null : (int) $gameWinnerSideNo;
+        return $g;
     }
 
     // -------------------------------------------------------------- snapshot

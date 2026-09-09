@@ -50,7 +50,11 @@ No code yet.
   HTTP, no CORS.
 
 ### Database
-- **`poker_pinochle`** on `localhost`.
+- **`poker_pinochle`** — MySQL runs on the NAS at **`192.168.8.218`**, reached
+  over the LAN (NOT `localhost`; the web/PHP box is separate). `config.php`
+  `['db']['host']` is set accordingly. `pp_user` is `@'%'` so remote is allowed.
+  *(The `sgc-auth` lib include is still same-box on the web server — only MySQL
+  is remote.)*
 - App user **`pp_user`** / **`Tardaed!01`** (`@'%'`): `SELECT,INSERT,UPDATE,DELETE`
   on `poker_pinochle.*`, **`SELECT` on `sim_auth.*`**.
 - `pp_user` **cannot** create schema — future migrations need a privileged user

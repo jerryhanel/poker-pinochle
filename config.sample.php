@@ -21,4 +21,14 @@ return [
 
     // Send the session cookie only over HTTPS. True in production.
     'secure_cookie' => true,
+
+    // poker_pinochle database (app user pp_user @ '%': CRUD on poker_pinochle.*,
+    // SELECT on sim_auth.*). MySQL lives on the NAS at 192.168.8.218 — NOT the
+    // same host as the web server, so this is a LAN address, not localhost.
+    'db' => [
+        'host' => '192.168.8.218',
+        'user' => 'pp_user',
+        'pass' => 'CHANGE_ME',
+        'name' => 'poker_pinochle',
+    ],
 ];
