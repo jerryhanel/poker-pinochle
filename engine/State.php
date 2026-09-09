@@ -60,8 +60,8 @@ final class State
         if ($mode !== 'teams' && $mode !== 'cutthroat') {
             throw new InvalidArgumentException("mode must be 'teams' or 'cutthroat'");
         }
-        if ($mode === 'teams' && $players % 2 !== 0) {
-            throw new InvalidArgumentException('teams mode needs an even player count');
+        if ($mode === 'teams' && ($players < 4 || $players % 2 !== 0)) {
+            throw new InvalidArgumentException('teams mode needs an even count of at least 4');
         }
 
         $this->players = $players;

@@ -161,18 +161,25 @@
     box.appendChild(el('h2', null, 'Hi ' + PP.me.name + ' — start or join a table'));
 
     var cf = el('form', 'lobby-form');
-    var lab1 = el('label', null, 'New game'); cf.appendChild(lab1);
+    cf.appendChild(el('label', null, 'New game'));
     var row1 = el('div', 'row');
     var selP = el('select'); selP.name = 'players';
-    [4, 6, 8, 3, 5, 7].forEach(function (n) { var o = el('option', null, n + ' players'); o.value = n; selP.appendChild(o); });
-    var selM = el('select'); selM.name = 'mode';
-    ['teams', 'cutthroat'].forEach(function (m) { var o = el('option', null, m === 'teams' ? 'Teams' : 'Cutthroat'); o.value = m; selM.appendChild(o); });
+    [2, 3, 4, 5, 6, 7, 8].forEach(function (n) { var o = el('option', null, n + ' players'); o.value = n; if (n === 4) o.selected = true; selP.appendChild(o); });
     var mkBtn = el('button', 'act primary', 'Create'); mkBtn.type = 'submit';
-    row1.appendChild(selP); row1.appendChild(selM); row1.appendChild(mkBtn);
+    row1.appendChild(selP); row1.appendChild(mkBtn);
     cf.appendChild(row1);
+    var modeHint = el('p', 'lobby-wait');
+    function updHint() {
+      var n = +selP.value;
+      modeHint.textContent = (n >= 4 && n % 2 === 0)
+        ? 'Two teams of ' + (n / 2) + ' — seating alternates.'
+        : (n === 2 ? 'Heads-up — every player for themselves, game to 50.' : 'Cutthroat — every player for themselves.');
+    }
+    selP.addEventListener('change', updHint); updHint();
+    cf.appendChild(modeHint);
     cf.addEventListener('submit', function (e) {
       e.preventDefault();
-      api('lobby.php?action=create', { players: +selP.value, mode: selM.value }).then(function (j) {
+      api('lobby.php?action=create', { players: +selP.value }).then(function (j) {
         setGame(j.gameUuid);
         toast('Created — share code ' + j.joinCode, 4000);
         startPolling();

@@ -267,6 +267,42 @@ if (isset($_GET['api'])) {
         }
     }
 
+    // --- 2-player heads-up ---
+    echo "\n-- 2-player heads-up --\n";
+    $g2Id = null;
+    try {
+        $c2 = Api::lobbyCreate($me, ['players' => 2, 'mode' => 'teams']); // mode arg ignored
+        $u2 = $c2['gameUuid'];
+        $ok(Api::game($me, ['game' => $u2])['mode'] === 'cutthroat', '2 players -> cutthroat mode');
+        Api::lobbyJoin($bots[0], ['game' => $u2]);
+        $db = pp_db();
+        $g2Id = (int) $db->query("SELECT id FROM game WHERE game_uuid = '" . $db->real_escape_string($u2) . "'")->fetch_assoc()['id'];
+        Api::start($me, ['game' => $u2]);
+        $two = [$me, $bots[0]];
+        $steps = 0;
+        while ($steps++ < 40) {
+            $s = Api::game($me, ['game' => $u2]);
+            if ($s['phase'] === 'scored') { break; }
+            $u = $two[$s['turnSeat']];
+            if ($s['phase'] === 'auction') { Api::bid($u, ['game' => $u2, 'action' => 'pass']); }
+            elseif ($s['phase'] === 'declare') { Api::declare($u, ['game' => $u2, 'trump' => 'H']); }
+            elseif ($s['phase'] === 'draw') { Api::draw($u, ['game' => $u2, 'discards' => []]); }
+            elseif ($s['phase'] === 'play') {
+                $mv = Api::game($u, ['game' => $u2]);
+                Api::play($u, ['game' => $u2, 'card' => $mv['legalPlays'][0]]);
+            }
+        }
+        $f2 = Api::game($me, ['game' => $u2]);
+        $ok($f2['phase'] === 'scored', '2-player hand played through to scored');
+        $ok($f2['target'] === 50, '2-player game target is 50');
+        echo "  scores " . json_encode($f2['result']['handScores']) . "\n";
+    } catch (Throwable $e) {
+        echo "2P TEST ERROR: {$e->getMessage()}\n";
+        $FAIL++;
+    } finally {
+        if ($g2Id !== null) { pp_db()->query("DELETE FROM game WHERE id = {$g2Id}"); echo "cleaned up game {$g2Id}\n"; }
+    }
+
     echo "\n-------------------------------------------\n";
     echo ($FAIL === 0 ? "API OK ({$PASS} checks)" : "{$PASS} passed, {$FAIL} FAILED") . "\n";
     exit($FAIL === 0 ? 0 : 1);

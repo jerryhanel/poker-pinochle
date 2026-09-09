@@ -61,21 +61,21 @@ final class Api
 
     // ---- lobby -------------------------------------------------------------
 
+    /** Player count decides the mode: even and >= 4 -> two teams, else cutthroat. */
+    public static function modeFor(int $players): string
+    {
+        return ($players >= 4 && $players % 2 === 0) ? 'teams' : 'cutthroat';
+    }
+
     public static function lobbyCreate(array $user, array $a): array
     {
         $players = (int) ($a['players'] ?? 0);
-        $mode    = (string) ($a['mode'] ?? '');
         $rules   = is_array($a['rules'] ?? null) ? $a['rules'] : [];
 
         if ($players < 2 || $players > 8) {
             throw new InvalidArgumentException('players must be 2–8.');
         }
-        if (!in_array($mode, ['teams', 'cutthroat'], true)) {
-            throw new InvalidArgumentException("mode must be 'teams' or 'cutthroat'.");
-        }
-        if ($mode === 'teams' && $players % 2 !== 0) {
-            throw new InvalidArgumentException('teams mode needs an even player count.');
-        }
+        $mode = self::modeFor($players);   // derived; any client-sent mode is ignored
 
         $code = strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
 
