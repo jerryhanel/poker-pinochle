@@ -196,7 +196,7 @@ final class GameStore
     {
         $rows = self::rows(
             $db,
-            "SELECT h.hand_no, h.bid_winner_side_no, h.winning_bid, h.bid_made, h.trump,
+            "SELECT h.hand_no, h.bid_winner_seat, h.bid_winner_side_no, h.winning_bid, h.bid_made, h.trump,
                     hs.side_no, hs.meld_points, hs.counters_captured, hs.hand_score, hs.score_after
              FROM hand h
              JOIN hand_side hs ON hs.hand_id = h.id
@@ -211,6 +211,7 @@ final class GameStore
             if (!isset($out[$hn])) {
                 $out[$hn] = [
                     'handNo'     => $hn,
+                    'bidderSeat' => $r['bid_winner_seat'] !== null ? (int) $r['bid_winner_seat'] : null,
                     'bidderSide' => $r['bid_winner_side_no'] !== null ? (int) $r['bid_winner_side_no'] : null,
                     'bid'        => (int) $r['winning_bid'],
                     'trump'      => $r['trump'],
