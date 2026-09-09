@@ -122,15 +122,19 @@ Compressed; `DESIGN.md` is authoritative.
 - **Play** 5 tricks. Must follow suit **and beat** if able; void → **must
   trump** and **must over-trump** if able; only if you can't follow/beat/trump
   may you **sluff**. Bid winner leads trick 1; each trick's winner leads next.
-- **Score the hand:** bidding side scores **meld + counters captured** if that
-  total **≥ bid** (may exceed it); if **< bid**, **forfeit all meld and score
-  −(bid)**. **Everyone else scores 0** — non-winning bids are lost.
-- **Game ends at:** 4p → **50**, 6p → **150**, 8p → **200**. Cutthroat (3p/5p)
-  targets TBD.
-- **Proposed defaults, not yet ratified:** stand-pat allowed (discard 0); may
-  discard counters; draw order = bid-winner first then clockwise; reshuffle
-  includes the current round's discards; "make" is `≥` (exact tie = made); no
-  "must bid it out"; non-bidders don't lay meld (scores 0).
+- **Score the hand:** *every* side keeps **meld + counters captured**, but a
+  side that wins **no trick forfeits its meld**. The **bidding** side, if its
+  total **< bid**, is **set**: forfeits meld and scores **−(bid)** flat.
+  Only the bidding side can go negative. *(Ratified 2026-09-09 — was
+  "non-bidders score 0".)*
+- **Game ends at:** teams 4p → **50**, 6p → **150**, 8p → **200**;
+  cutthroat/heads-up = **25 × players** (2p → 50, 3p → 75, 5p → 125, 7p → 175).
+  Mode follows the count: even ≥4 → teams, else cutthroat.
+- **Ratified defaults:** stand-pat allowed (discard 0); may discard counters;
+  draw order = bid-winner first then clockwise; reshuffle includes the current
+  round's discards; "make" is `≥` (exact tie = made); no "must bid it out";
+  one card may fill two melds; meld list complete (no runs/doubles); after a
+  scored hand every seated player must click **Ready** before the next deal.
 
 ---
 

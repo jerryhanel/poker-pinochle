@@ -4,13 +4,13 @@ declare(strict_types=1);
 // -----------------------------------------------------------------------------
 // Score — one hand's outcome, plus running totals and game end.
 //
-//  * Only the BIDDING side can score on a hand. Its total = meld + counters
-//    captured in tricks.
+//  * A side must win at least ONE trick to keep its meld (meld forfeited on
+//    zero tricks). This applies to EVERY side.
+//  * Non-bidding side: score = kept meld + counters captured in tricks.
+//  * Bidding side: total = kept meld + counters captured.
 //      - total >= bid  -> "made": score the full total (it may exceed the bid).
-//      - total <  bid   -> "set": forfeit ALL meld and score -(bid).
-//  * A side must win at least ONE trick to keep its meld. (For non-bidding
-//    sides this is moot — they score 0 regardless.)
-//  * Every non-bidding side scores 0 for the hand.
+//      - total <  bid   -> "set": forfeit ALL meld and score -(bid) flat
+//                          (captured counters do not offset the penalty).
 //  * "Made" is >= : meld + counters exactly equal to the bid counts as made.
 //
 // Game targets:  teams   4p->50, 6p->150, 8p->200
@@ -72,7 +72,8 @@ final class Score
             if ($s === $biddingSideNo) {
                 $handScore = $made ? $biddingTotal : -$bid;
             } else {
-                $handScore = 0;   // non-bidders never score
+                // non-bidders keep what they captured (+ meld, if they took a trick)
+                $handScore = ($kept ? $meld : 0) + $counters;
             }
 
             $sides[$s] = [

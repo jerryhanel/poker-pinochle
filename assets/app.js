@@ -620,17 +620,22 @@
       });
       grp.appendChild(row);
 
-      // counters, then meld, then the total  (meld + counters captured)
+      // counters, then meld, then the total  (kept meld + counters captured)
       var meld = (snap.meldBySide && snap.meldBySide[k] != null) ? snap.meldBySide[k] : null;
+      var tricks = (snap.tricksWonBySide && snap.tricksWonBySide[k]) || 0;
       var foot = el('div', 'won-foot');
       foot.appendChild(el('span', null, 'counters ' + ctr));
       if (meld != null) {
-        foot.appendChild(el('span', null, 'meld ' + meld));
-        var total = meld + ctr;
+        var kept = tricks > 0;
+        var meldNote = (meld > 0 && !kept) ? (snap.phase === 'scored' ? ' (forfeited — no trick)' : ' (needs a trick)') : '';
+        foot.appendChild(el('span', null, 'meld ' + meld + meldNote));
+        var total = (kept ? meld : 0) + ctr;
         var tl = el('span', 'won-total', 'total ' + total);
         if (side === bidSide && snap.winningBid) {
-          tl.textContent = 'total ' + total + ' / bid ' + snap.winningBid;
-          tl.classList.add(total >= snap.winningBid ? 'made' : 'set');
+          var made = total >= snap.winningBid;
+          tl.textContent = 'total ' + total + ' / bid ' + snap.winningBid +
+            (snap.phase === 'scored' && !made ? ' — set −' + snap.winningBid : '');
+          tl.classList.add(made ? 'made' : 'set');
         }
         foot.appendChild(tl);
       }

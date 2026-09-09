@@ -135,11 +135,14 @@ ok(Score::target('teams', 4) === 50 && Score::target('teams', 6) === 150 && Scor
 ok(Score::target('cutthroat', 3) === 75 && Score::target('cutthroat', 5) === 125 && Score::target('cutthroat', 7) === 175, 'cutthroat targets = 25 x players');
 $r = Score::scoreHand(1, 20, [0 => 4, 1 => 6], [0 => 10, 1 => 14], [0 => 2, 1 => 3]);
 ok($r['made'] === true && $r['biddingTotal'] === 20 && $r['sides'][1]['handScore'] === 20, 'exact make counts (>=), scores the total');
-ok($r['sides'][0]['handScore'] === 0, 'non-bidding side scores 0');
+ok($r['sides'][0]['handScore'] === 14, 'non-bidder scores kept meld (4) + captured counters (10)');
 $r = Score::scoreHand(1, 20, [0 => 4, 1 => 9], [0 => 18, 1 => 6], [0 => 4, 1 => 1]);
-ok($r['made'] === false && $r['sides'][1]['handScore'] === -20, 'short of bid -> set, score -(bid)');
+ok($r['made'] === false && $r['sides'][1]['handScore'] === -20, 'short of bid -> set, score -(bid) flat');
+ok($r['sides'][0]['handScore'] === 22, 'non-bidder still scores their meld + counters when the bidder is set');
 $r = Score::scoreHand(0, 12, [0 => 8, 1 => 0], [0 => 0, 1 => 0], [0 => 0, 1 => 5]);
-ok($r['sides'][0]['meldKept'] === false && $r['biddingTotal'] === 0 && $r['sides'][0]['handScore'] === -12, 'no trick won -> meld forfeited');
+ok($r['sides'][0]['meldKept'] === false && $r['biddingTotal'] === 0 && $r['sides'][0]['handScore'] === -12, 'bidder wins no trick -> meld forfeited, set');
+$r = Score::scoreHand(0, 15, [0 => 6, 1 => 8], [0 => 24, 1 => 0], [0 => 5, 1 => 0]);
+ok($r['sides'][1]['handScore'] === 0, 'non-bidder with zero tricks: meld forfeited, no counters -> 0');
 $run = Score::applyToTotals([0 => 30, 1 => 12], [0 => 0, 1 => 21]);
 ok($run === [0 => 30, 1 => 33], 'applyToTotals');
 ok(Score::gameWinner([0 => 48, 1 => 51], 50) === 1 && Score::gameWinner([0 => 48, 1 => 49], 50) === null, 'gameWinner at target');

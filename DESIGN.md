@@ -160,16 +160,22 @@ Do non-bidding players lay meld down at all (it scores 0 for them)?
 
 ## 8. Scoring
 
+**Every side must win at least one trick to keep its meld** — a side that takes
+zero tricks forfeits its melded points (it still keeps any captured counters,
+which for a trickless side is zero).
+
 ### Bidding side
-Total for the hand = **meld + counters captured in tricks**.
+Total for the hand = **kept meld + counters captured in tricks**.
 
 - **Total ≥ bid → made it.** Score the full total (it may exceed the bid).
-- **Total < bid → set.** **Forfeit all meld** and score **−(bid)**.
-  In team play the whole partnership takes the negative as a unit.
+- **Total < bid → set.** **Forfeit all meld** and score **−(bid)** flat —
+  captured counters do not offset the penalty. In team play the whole
+  partnership takes the negative as a unit.
 
 ### Everyone else
-A hand is worth **0** to non-bidders — non-winning bids are lost. Their meld and
-captured counters do not score. Only the bidder risks going negative.
+Each non-bidding side scores **kept meld + counters captured in tricks**
+(*ratified 2026-09-09 — supersedes the earlier "non-bidders score 0" rule*).
+Only the bidding side can go negative.
 
 ---
 
