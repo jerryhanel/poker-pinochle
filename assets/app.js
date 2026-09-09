@@ -20,6 +20,7 @@
   var pollTimer = null;
   var busy = false;         // an action POST is in flight
   var showWon = false;      // "cards won so far" panel toggled open
+  var meldToggle = {};      // "<handNo>:<seat>" -> explicit expand/collapse override for meld cards
 
   try { GAME = localStorage.getItem('pp-game') || null; } catch (e) {}
 
@@ -665,15 +666,45 @@
 
   function meldStrip(f) {
     if (!snap.meld) return;
+    // once any card has hit the table this hand, meld cards collapse by default
+    var anyPlayed = (snap.tricksPlayed || 0) > 0 || !!(snap.trick && snap.trick.plays.length);
     var strip = el('div', 'meldstrip');
+
     Object.keys(snap.meld).forEach(function (seat) {
       var det = snap.meld[seat];
       var item = el('div', 'meld-item' + (det.total > 0 ? ' feat' : ''));
-      item.appendChild(document.createTextNode(seatName(+seat) + ' '));
-      item.appendChild(el('span', 'mp', '+' + det.total));
+
+      var head = el('div', 'meld-head');
+      head.appendChild(document.createTextNode(seatName(+seat) + ' '));
+      head.appendChild(el('span', 'mp', '+' + det.total));
       if (det.items && det.items.length) {
-        item.appendChild(el('em', null, det.items.map(function (i) { return i.label; }).join(' · ')));
+        head.appendChild(el('em', null, det.items.map(function (i) { return i.label; }).join(' · ')));
       }
+      item.appendChild(head);
+
+      if (det.items && det.items.length) {
+        // distinct card codes across every meld (a card may count in two melds)
+        var codes = [];
+        det.items.forEach(function (mi) {
+          (mi.cards || []).forEach(function (c) { if (codes.indexOf(c) < 0) codes.push(c); });
+        });
+        codes.sort(sortCard);
+
+        var cw = el('div', 'meld-cards');
+        codes.forEach(function (c) { cw.appendChild(cardTile(c, { mini: true })); });
+        item.appendChild(cw);
+
+        var key = snap.handNo + ':' + seat;
+        var open = (key in meldToggle) ? meldToggle[key] : !anyPlayed;
+        cw.hidden = !open;
+        item.classList.add('meld-clickable');
+        item.addEventListener('click', function () {
+          var cur = (key in meldToggle) ? meldToggle[key] : !anyPlayed;
+          meldToggle[key] = !cur;
+          cw.hidden = cur;
+        });
+      }
+
       strip.appendChild(item);
     });
     f.appendChild(strip);

@@ -399,11 +399,16 @@ body {
 
 .meldstrip { display: flex; gap: 10px; flex-wrap: wrap; }
 .meld-item {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
   background: rgba(0,0,0,.22);
   border: 1px solid var(--baize-line); border-radius: 10px;
   padding: 8px 12px; font-size: 14px;
 }
+.meld-item.meld-clickable { cursor: pointer; }
+.meld-item.meld-clickable:hover { border-color: var(--brass); }
+.meld-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.meld-cards { display: flex; gap: 4px; flex-wrap: wrap; }
+.meld-cards .tile { cursor: inherit; box-shadow: none; }
 .meld-item .mp { font-family: var(--f-mono); font-weight: 700; color: var(--brass-bright); }
 .meld-item em {
   font-style: normal; text-transform: uppercase; letter-spacing: .08em;
