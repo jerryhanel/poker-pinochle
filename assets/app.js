@@ -551,9 +551,8 @@
     var box = el('div', 'result-box');
     var bidderName = snap.mode === 'teams' ? ('Team ' + (r.biddingSideNo + 1)) : seatName(snap.bidWinnerSeat);
     box.appendChild(el('div', 'big ' + (r.made ? 'made' : 'set'),
-      r.made ? (bidderName + ' MADE ' + r.biddingTotal) : (bidderName + ' SET −' + r.bid)));
-    box.appendChild(el('p', 'felt-hint',
-      'bid ' + r.bid + ' · meld ' + sideList(snap.meldBySide || {}) + ' · counters ' + sideList(snap.countersBySide || {})));
+      r.made ? (bidderName + ' MADE ' + r.biddingTotal + ' on a bid of ' + r.bid)
+             : (bidderName + ' SET −' + r.bid)));
     f.appendChild(box);
 
     // captured piles — always visible at hand end for verification
