@@ -472,14 +472,15 @@
       var me = snap.seats[mySeat()];
       var maxDiscard = 5 - (snap.keepMin || 0);
       f.appendChild(el('p', 'felt-hint', 'Pick up to ' + maxDiscard + ' card' + (maxDiscard === 1 ? '' : 's') + ' to discard, then draw — or stand pat.'));
-      var picked = [];
+      var picked = [];   // tile elements, not codes — the hand can hold duplicates (KS + KS)
       var rowEl = el('div', 'pickrow');
       (me.cards || []).forEach(function (code) {
         var t = cardTile(code, { button: true });
+        t.dataset.code = code;
         t.addEventListener('click', function () {
-          var i = picked.indexOf(code);
+          var i = picked.indexOf(t);
           if (i >= 0) { picked.splice(i, 1); t.classList.remove('picked'); }
-          else if (picked.length < maxDiscard) { picked.push(code); t.classList.add('picked'); }
+          else if (picked.length < maxDiscard) { picked.push(t); t.classList.add('picked'); }
           drawBtn.textContent = picked.length ? ('Discard ' + picked.length + ' & draw') : 'Stand pat';
         });
         rowEl.appendChild(t);
@@ -489,7 +490,10 @@
       bar.appendChild(el('div', 'tb-text', 'Your draw'));
       var acts = el('div', 'tb-actions');
       var drawBtn = el('button', 'act primary', 'Stand pat');
-      drawBtn.addEventListener('click', function () { act(api('draw.php', { game: GAME, discards: picked })); });
+      drawBtn.addEventListener('click', function () {
+        var discards = picked.map(function (t) { return t.dataset.code; });
+        act(api('draw.php', { game: GAME, discards: discards }));
+      });
       acts.appendChild(drawBtn);
       bar.appendChild(acts);
       f.appendChild(bar);
