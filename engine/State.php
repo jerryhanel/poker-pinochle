@@ -495,6 +495,12 @@ final class State
             ];
         }
 
+        // when it's the viewer's turn to play, hand them their legal cards
+        $legalPlays = null;
+        if ($h && $h['phase'] === 'play' && $viewerSeat !== null && $viewerSeat === $this->playTurnSeat()) {
+            $legalPlays = Trick::legalPlays($h['hands'][$viewerSeat], $h['trick']['plays'], $h['trump']);
+        }
+
         return [
             'players'       => $this->players,
             'mode'          => $this->mode,
@@ -517,6 +523,7 @@ final class State
             'countersBySide'=> $h['countersBySide'] ?? null,
             'tricksWonBySide'=> $h['tricksWonBySide'] ?? null,
             'result'        => $h['result'] ?? null,
+            'legalPlays'    => $legalPlays,
             'seats'         => $seats,
         ];
     }

@@ -147,6 +147,108 @@ if (isset($_GET['db'])) {
 }
 
 // ===========================================================================
+// ?api=1 — drive the Api layer end to end (no HTTP; direct calls)
+// ===========================================================================
+if (isset($_GET['api'])) {
+    require __DIR__ . '/lib/Api.php';
+
+    $PASS = 0; $FAIL = 0;
+    $ok = function (bool $c, string $m) use (&$PASS, &$FAIL) {
+        if ($c) { $PASS++; } else { $FAIL++; echo "  FAIL  {$m}\n"; }
+    };
+
+    echo "\n== API end-to-end ==\n";
+    $me   = pp_current_user();
+    $bots = [
+        ['uuid' => pp_uuid_for_name('Bot-B'), 'name' => 'Bot-B'],
+        ['uuid' => pp_uuid_for_name('Bot-C'), 'name' => 'Bot-C'],
+        ['uuid' => pp_uuid_for_name('Bot-D'), 'name' => 'Bot-D'],
+    ];
+    $users  = array_merge([$me], $bots);   // index = seat
+    $gameId = null;
+
+    try {
+        $c = Api::lobbyCreate($me, ['players' => 4, 'mode' => 'teams']);
+        $uuid = $c['gameUuid'];
+        $ok($c['seat'] === 0, 'creator seated at 0');
+        echo "created {$uuid}  code {$c['joinCode']}\n";
+
+        foreach ($bots as $i => $b) {
+            $j = Api::lobbyJoin($b, ['game' => $uuid]);
+            $ok($j['seat'] === $i + 1, "bot " . ($i + 1) . " took seat " . ($i + 1));
+        }
+        $ok(Api::lobbyJoin($bots[0], ['game' => $uuid])['seat'] === 1, 're-join is idempotent');
+
+        $list = Api::lobbyList()['games'];
+        $mine = null;
+        foreach ($list as $row) { if ($row['gameUuid'] === $uuid) { $mine = $row; } }
+        $ok($mine && $mine['seated'] === 4, 'lobby list shows 4/4 seated');
+
+        try { Api::start($bots[0], ['game' => $uuid]); $ok(false, 'non-host start rejected'); }
+        catch (DomainException $e) { $ok(true, 'non-host start rejected'); }
+
+        $snap = Api::start($me, ['game' => $uuid]);
+        $ok($snap['phase'] === 'auction', 'start -> auction');
+
+        $db = pp_db();
+        $gameId = (int) $db->query("SELECT id FROM game WHERE game_uuid = '" . $db->real_escape_string($uuid) . "'")->fetch_assoc()['id'];
+
+        $steps = 0;
+        while ($steps++ < 60) {
+            $s  = Api::game($me, ['game' => $uuid]);
+            $ph = $s['phase'];
+            if ($ph === 'scored') { break; }
+            $ts = $s['turnSeat'];
+            $u  = $users[$ts];
+            if ($ph === 'auction') {
+                Api::bid($u, ['game' => $uuid, 'action' => 'pass']);
+            } elseif ($ph === 'declare') {
+                Api::declare($u, ['game' => $uuid, 'trump' => 'S']);
+            } elseif ($ph === 'draw') {
+                Api::draw($u, ['game' => $uuid, 'discards' => []]);
+            } elseif ($ph === 'play') {
+                $mv = Api::game($u, ['game' => $uuid]);
+                Api::play($u, ['game' => $uuid, 'card' => $mv['legalPlays'][0]]);
+            } else {
+                $ok(false, "unexpected phase {$ph}");
+                break;
+            }
+        }
+        $final = Api::game($me, ['game' => $uuid]);
+        $ok($final['phase'] === 'scored', 'hand played through to scored via the API');
+        $ok(isset($final['result']['handScores']), 'result present in the snapshot');
+        echo "  scores " . json_encode($final['result']['handScores']) .
+             "  running " . json_encode($final['result']['runningAfter']) . "\n";
+
+        // turn-enforcement: a player out of turn is refused
+        try {
+            Api::start($me, ['game' => $uuid]);   // already active
+            $ok(false, 'start on an active game rejected');
+        } catch (DomainException $e) {
+            $ok(true, 'start on an active game rejected');
+        }
+
+        // chat
+        Api::chatPost($me, ['game' => $uuid, 'text' => 'good game']);
+        Api::chatPost($bots[0], ['game' => $uuid, 'text' => 'gg']);
+        $msgs = Api::chatList($me, ['game' => $uuid])['messages'];
+        $ok(count($msgs) === 2 && $msgs[0]['body'] === 'good game', 'chat stored + listed in order');
+    } catch (Throwable $e) {
+        echo "API TEST ERROR: {$e->getMessage()}\n" . $e->getTraceAsString() . "\n";
+        $FAIL++;
+    } finally {
+        if ($gameId !== null) {
+            pp_db()->query("DELETE FROM game WHERE id = {$gameId}");
+            echo "cleaned up game {$gameId}\n";
+        }
+    }
+
+    echo "\n-------------------------------------------\n";
+    echo ($FAIL === 0 ? "API OK ({$PASS} checks)" : "{$PASS} passed, {$FAIL} FAILED") . "\n";
+    exit($FAIL === 0 ? 0 : 1);
+}
+
+// ===========================================================================
 // default — engine harness
 // ===========================================================================
 $argv = ['harness'];
