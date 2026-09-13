@@ -8,6 +8,7 @@ declare(strict_types=1);
 //   /poker-pinochle/dev.php?quiet=1    engine harness: tests only
 //   /poker-pinochle/dev.php?hand=1     engine harness: sample hand only
 //   /poker-pinochle/dev.php?db=1       persistence round-trip against the live DB
+//   /poker-pinochle/dev.php?meld=1     meld_lab: type a hand, see the breakdown
 // -----------------------------------------------------------------------------
 
 require __DIR__ . '/lib/bootstrap.php';
@@ -16,6 +17,73 @@ if (pp_current_user() === null) {
     http_response_code(403);
     header('Content-Type: text/plain; charset=utf-8');
     echo "Sign in at /poker-pinochle/ first (this page is PIN-gated dev tooling).\n";
+    exit;
+}
+
+// ===========================================================================
+// ?meld=1 — meld_lab: a form to poke at Meld::detect() by hand, no terminal
+// ===========================================================================
+if (isset($_GET['meld'])) {
+    require __DIR__ . '/engine/meld_lab.php';
+    header('Content-Type: text/html; charset=utf-8');
+
+    $trump   = strtoupper((string) ($_GET['trump'] ?? 'S'));
+    $handRaw = trim((string) ($_GET['hand'] ?? ''));
+    $result  = null;
+    $error   = null;
+
+    if ($handRaw !== '') {
+        $hand = preg_split('/[,\s]+/', strtoupper($handRaw), -1, PREG_SPLIT_NO_EMPTY);
+        $badCards = array_filter($hand, static fn($c) => !Cards::isValid($c));
+        if (!in_array($trump, ['S', 'H', 'D', 'C', 'NT'], true)) {
+            $error = "Bad trump '{$trump}' — must be S, H, D, C or NT.";
+        } elseif (!empty($badCards)) {
+            $error = 'Bad card code(s): ' . implode(', ', $badCards) . ' — use rank+suit, e.g. KS, QD, 9H, TS.';
+        } else {
+            $result = meld_lab_render($hand, $trump);
+        }
+    }
+
+    $h = static fn($s) => htmlspecialchars((string) $s, ENT_QUOTES);
+    ?>
+<!doctype html>
+<meta charset="utf-8">
+<title>meld_lab</title>
+<style>
+  body { font: 15px/1.4 monospace; max-width: 60em; margin: 2em auto; padding: 0 1em; }
+  form { margin-bottom: 1.5em; }
+  input[type=text] { font: inherit; padding: .3em; }
+  #cards { width: 24em; }
+  pre { background: #f4f4f4; padding: .8em; overflow-x: auto; }
+  .err { color: #b00; font-weight: bold; }
+</style>
+<h1>meld_lab</h1>
+<p>Type any hand (duplicates allowed — the deck has two of every card) and a trump, and see exactly how <code>Meld::detect()</code> scores it.</p>
+<form method="get">
+  <input type="hidden" name="meld" value="1">
+  trump
+  <select name="trump">
+    <?php foreach (['S' => 'spades', 'H' => 'hearts', 'D' => 'diamonds', 'C' => 'clubs', 'NT' => 'no trump'] as $code => $name): ?>
+      <option value="<?= $h($code) ?>" <?= $trump === $code ? 'selected' : '' ?>><?= $h("$code — $name") ?></option>
+    <?php endforeach; ?>
+  </select>
+  cards
+  <input type="text" id="cards" name="hand" value="<?= $h($handRaw) ?>" placeholder="KS KS QS AH AD">
+  <button type="submit">check</button>
+</form>
+<?php if ($error): ?>
+  <p class="err"><?= $h($error) ?></p>
+<?php elseif ($result): ?>
+  <pre><?= $h($result) ?></pre>
+<?php endif; ?>
+<h2>Reference matrix</h2>
+<p>Doubled/partial-combo cases, for comparison — not assertions, just a starting point.</p>
+<pre><?php
+foreach (meld_lab_scenarios() as [$label, $sHand, $sTrump]) {
+    echo $h("-- {$label} --\n" . meld_lab_render($sHand, $sTrump) . "\n");
+}
+?></pre>
+    <?php
     exit;
 }
 
