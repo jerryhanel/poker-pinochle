@@ -7,9 +7,13 @@ require_once __DIR__ . '/Cards.php';
 // Meld — scoring combinations shown from the final 5-card hand (after the draw).
 // Melded cards STAY in the hand and are played normally during the tricks.
 //
-// The list is complete as written — no A-T-K-Q-J run, no doubles (double
-// pinochle etc.). ONE card may fill TWO different melds at once (e.g. Q♠ counts
-// in a spade marriage AND the pinochle), so detection never "consumes" cards.
+// The list is complete as written — no A-T-K-Q-J run meld. ONE card may fill
+// TWO different melds at once (e.g. Q♠ counts in a spade marriage AND the
+// pinochle), so detection never "consumes" cards. The deck carries two copies
+// of every card, so a hand CAN hold both copies of a combo's cards (two
+// marriages of the same suit, double pinochle, two nines of trump) — each
+// full copy of the combo scores again, counted via card multiplicity, not a
+// yes/no membership check.
 //
 //   Marriage (K+Q same suit) ...... 4 in trump, else 2   (under NT: always 2)
 //   9 of trump .................... 1                     (none under NT)
@@ -33,32 +37,48 @@ final class Meld
         $has = static function (string $card) use ($hand): bool {
             return in_array($card, $hand, true);
         };
+        $count = static function (string $card) use ($hand): int {
+            $n = 0;
+            foreach ($hand as $c) {
+                if ($c === $card) {
+                    $n++;
+                }
+            }
+            return $n;
+        };
 
-        // --- marriages (one per suit, regardless of holding both copies) ---
+        // --- marriages (K+Q same suit) — one instance per full copy held ---
         foreach (Cards::SUITS as $s) {
-            if ($has('K' . $s) && $has('Q' . $s)) {
+            $copies = min($count('K' . $s), $count('Q' . $s));
+            if ($copies > 0) {
                 $inTrump = ($trump !== 'NT' && $s === $trump);
+                for ($i = 0; $i < $copies; $i++) {
+                    $items[] = [
+                        'type'   => $inTrump ? 'marriage_trump' : 'marriage',
+                        'label'  => ($inTrump ? 'Royal marriage ' : 'Marriage ') . Cards::SUIT_GLYPH[$s],
+                        'cards'  => ['K' . $s, 'Q' . $s],
+                        'points' => $inTrump ? 4 : 2,
+                    ];
+                }
+            }
+        }
+
+        // --- 9 of trump (the "dix") — one instance per copy held ---
+        if ($trump !== 'NT') {
+            $copies = $count('9' . $trump);
+            for ($i = 0; $i < $copies; $i++) {
                 $items[] = [
-                    'type'   => $inTrump ? 'marriage_trump' : 'marriage',
-                    'label'  => ($inTrump ? 'Royal marriage ' : 'Marriage ') . Cards::SUIT_GLYPH[$s],
-                    'cards'  => ['K' . $s, 'Q' . $s],
-                    'points' => $inTrump ? 4 : 2,
+                    'type'   => 'nine_trump',
+                    'label'  => '9 of trump',
+                    'cards'  => ['9' . $trump],
+                    'points' => 1,
                 ];
             }
         }
 
-        // --- 9 of trump (the "dix") ---
-        if ($trump !== 'NT' && $has('9' . $trump)) {
-            $items[] = [
-                'type'   => 'nine_trump',
-                'label'  => '9 of trump',
-                'cards'  => ['9' . $trump],
-                'points' => 1,
-            ];
-        }
-
-        // --- pinochle: Q spades + J diamonds ---
-        if ($has('QS') && $has('JD')) {
+        // --- pinochle: Q spades + J diamonds — one instance per full copy ---
+        $copies = min($count('QS'), $count('JD'));
+        for ($i = 0; $i < $copies; $i++) {
             $items[] = [
                 'type'   => 'pinochle',
                 'label'  => 'Pinochle',
