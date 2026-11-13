@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 require __DIR__ . '/_boot.php';
 
 // GET — who am I? Also hands the client its CSRF token.
