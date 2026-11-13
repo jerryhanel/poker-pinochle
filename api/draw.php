@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/_boot.php';
+use PokerPinochle\Lib\Api;
 pp_api_need_post();
 $body = pp_api_body();
 pp_api_csrf($body);

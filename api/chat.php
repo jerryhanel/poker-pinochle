@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/_boot.php';
+use PokerPinochle\Lib\Api;
 
 // POST { game?, text }  -> store + broadcast     (game omitted = lobby chat)
 // GET  ?g=<uuid>&since=<id>  -> recent messages

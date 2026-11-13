@@ -12,6 +12,10 @@ declare(strict_types=1);
 // -----------------------------------------------------------------------------
 
 require __DIR__ . '/lib/bootstrap.php';
+require __DIR__ . '/engine/autoload.php';
+
+use PokerPinochle\Engine\{Cards, Deck, State};
+use PokerPinochle\Lib\{Api, GameStore};
 
 if (pp_current_user() === null) {
     http_response_code(403);
@@ -27,7 +31,7 @@ if (isset($_GET['meld'])) {
     require __DIR__ . '/engine/meld_lab.php';
     header('Content-Type: text/html; charset=utf-8');
 
-    $trump   = strtoupper((string) ($_GET['trump'] ?? 'S'));
+    $inSuit  = strtoupper((string) ($_GET['inSuit'] ?? 'S'));
     $handRaw = trim((string) ($_GET['hand'] ?? ''));
     $result  = null;
     $error   = null;
@@ -35,12 +39,12 @@ if (isset($_GET['meld'])) {
     if ($handRaw !== '') {
         $hand = preg_split('/[,\s]+/', strtoupper($handRaw), -1, PREG_SPLIT_NO_EMPTY);
         $badCards = array_filter($hand, static fn($c) => !Cards::isValid($c));
-        if (!in_array($trump, ['S', 'H', 'D', 'C', 'NT'], true)) {
-            $error = "Bad trump '{$trump}' — must be S, H, D, C or NT.";
+        if (!in_array($inSuit, ['S', 'H', 'D', 'C', 'NS'], true)) {
+            $error = "Bad suit '{$inSuit}' — must be S, H, D, C or NS.";
         } elseif (!empty($badCards)) {
             $error = 'Bad card code(s): ' . implode(', ', $badCards) . ' — use rank+suit, e.g. KS, QD, 9H, TS.';
         } else {
-            $result = meld_lab_render($hand, $trump);
+            $result = meld_lab_render($hand, $inSuit);
         }
     }
 
@@ -58,13 +62,13 @@ if (isset($_GET['meld'])) {
   .err { color: #b00; font-weight: bold; }
 </style>
 <h1>meld_lab</h1>
-<p>Type any hand (duplicates allowed — the deck has two of every card) and a trump, and see exactly how <code>Meld::detect()</code> scores it.</p>
+<p>Type any hand (duplicates allowed — the deck has two of every card) and a suit, and see exactly how <code>Meld::detect()</code> scores it.</p>
 <form method="get">
   <input type="hidden" name="meld" value="1">
-  trump
-  <select name="trump">
-    <?php foreach (['S' => 'spades', 'H' => 'hearts', 'D' => 'diamonds', 'C' => 'clubs', 'NT' => 'no trump'] as $code => $name): ?>
-      <option value="<?= $h($code) ?>" <?= $trump === $code ? 'selected' : '' ?>><?= $h("$code — $name") ?></option>
+  in suit
+  <select name="inSuit">
+    <?php foreach (['S' => 'spades', 'H' => 'hearts', 'D' => 'diamonds', 'C' => 'clubs', 'NS' => 'no suit'] as $code => $name): ?>
+      <option value="<?= $h($code) ?>" <?= $inSuit === $code ? 'selected' : '' ?>><?= $h("$code — $name") ?></option>
     <?php endforeach; ?>
   </select>
   cards
@@ -79,8 +83,8 @@ if (isset($_GET['meld'])) {
 <h2>Reference matrix</h2>
 <p>Doubled/partial-combo cases, for comparison — not assertions, just a starting point.</p>
 <pre><?php
-foreach (meld_lab_scenarios() as [$label, $sHand, $sTrump]) {
-    echo $h("-- {$label} --\n" . meld_lab_render($sHand, $sTrump) . "\n");
+foreach (meld_lab_scenarios() as [$label, $sHand, $sInSuit]) {
+    echo $h("-- {$label} --\n" . meld_lab_render($sHand, $sInSuit) . "\n");
 }
 ?></pre>
     <?php
@@ -154,9 +158,9 @@ if (isset($_GET['db'])) {
         while ($g->hand['phase'] === 'auction');
         echo "auction done -> phase {$g->hand['phase']}, bid winner seat {$g->hand['bidWinnerSeat']} @ {$g->hand['winningBid']}\n";
 
-        $step(function (State $g) { $g->declareTrump($g->hand['bidWinnerSeat'], 'S'); });
+        $step(function (State $g) { $g->declareInSuit($g->hand['bidWinnerSeat'], 'S'); });
 
-        do { $g = $step(function (State $g) { if ($g->hand['phase'] === 'draw') $g->draw($g->drawTurnSeat(), []); }); }
+        do { $g = $step(function (State $g) { if ($g->hand['phase'] === 'draw') $g->draw($g->pendingDiscardSeats()[0], []); }); }
         while ($g->hand['phase'] === 'draw');
         echo "draw done -> phase {$g->hand['phase']}\n";
 
@@ -292,7 +296,7 @@ if (isset($_GET['api'])) {
             if ($ph === 'auction') {
                 Api::bid($u, ['game' => $uuid, 'action' => 'pass']);
             } elseif ($ph === 'declare') {
-                Api::declare($u, ['game' => $uuid, 'trump' => 'S']);
+                Api::declare($u, ['game' => $uuid, 'inSuit' => 'S']);
             } elseif ($ph === 'draw') {
                 Api::draw($u, ['game' => $uuid, 'discards' => []]);
             } elseif ($ph === 'play') {
@@ -363,7 +367,7 @@ if (isset($_GET['api'])) {
             if ($s['phase'] === 'scored') { break; }
             $u = $two[$s['turnSeat']];
             if ($s['phase'] === 'auction') { Api::bid($u, ['game' => $u2, 'action' => 'pass']); }
-            elseif ($s['phase'] === 'declare') { Api::declare($u, ['game' => $u2, 'trump' => 'H']); }
+            elseif ($s['phase'] === 'declare') { Api::declare($u, ['game' => $u2, 'inSuit' => 'H']); }
             elseif ($s['phase'] === 'draw') { Api::draw($u, ['game' => $u2, 'discards' => []]); }
             elseif ($s['phase'] === 'play') {
                 $mv = Api::game($u, ['game' => $u2]);

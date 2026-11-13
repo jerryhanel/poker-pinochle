@@ -1,22 +1,16 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/db.php';
-require_once __DIR__ . '/../engine/State.php';
+namespace PokerPinochle\Lib;
 
-// -----------------------------------------------------------------------------
-// GameStore — maps the engine State <-> the poker_pinochle tables.
-//
-//   hand.state_json  is the authoritative in-flight hand state. Every request
-//   loads it, mutates through validated State methods, and saves it back.
-//
-//   When a hand reaches 'scored', save() also flushes the normalized history
-//   (bid / trick / trick_play / hand_player / hand_side) and rolls the running
-//   scores into game_side.score / game.winning_side_no. Those rows feed
-//   v_player_stats and are the durable record.
-//
-// All writes go through pp_tx() at the call site (see withGame()).
-// -----------------------------------------------------------------------------
+use DomainException;
+use InvalidArgumentException;
+use mysqli;
+use mysqli_stmt;
+use PokerPinochle\Engine\{Auction, Cards, Deck, Meld, Score, State};
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/../engine/autoload.php';
 
 final class GameStore
 {
@@ -100,6 +94,26 @@ final class GameStore
         return ['id' => $gameId, 'uuid' => $uuid];
     }
 
+    /**
+     * Opportunistic housekeeping: flip stale lobby/active games to 'abandoned'
+     * so they stop cluttering the table list. A status flip, not a DELETE — a
+     * game already has hand/bid/trick rows some clients may still hold a
+     * snapshot for, and 'complete' games (real history) are never touched.
+     * Cheap (indexed on created_at) and safe to call on every lobby-list hit.
+     */
+    public static function pruneStale(mysqli $db, int $hours = 24): void
+    {
+        self::exec(
+            $db,
+            "UPDATE game
+               SET status = 'abandoned', ended_at = NOW()
+             WHERE status IN ('lobby','active')
+               AND created_at < (NOW() - INTERVAL ? HOUR)",
+            'i',
+            [$hours]
+        );
+    }
+
     public static function seatPlayer(
         mysqli $db,
         int $gameId,
@@ -107,19 +121,20 @@ final class GameStore
         int $sideNo,
         string $uuid,
         string $name,
-        bool $isHost = false
+        bool $isHost = false,
+        bool $isBot = false
     ): void {
         self::exec(
             $db,
             "INSERT INTO game_player
-               (game_id, seat_no, side_no, user_uuid, display_name, is_host, connection, joined_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'connected', NOW())
+               (game_id, seat_no, side_no, user_uuid, display_name, is_host, is_bot, connection, joined_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'connected', NOW())
              ON DUPLICATE KEY UPDATE
                side_no = VALUES(side_no), user_uuid = VALUES(user_uuid),
                display_name = VALUES(display_name), is_host = VALUES(is_host),
-               connection = 'connected', left_at = NULL",
-            'iiissi',
-            [$gameId, $seat, $sideNo, $uuid, $name, $isHost ? 1 : 0]
+               is_bot = VALUES(is_bot), connection = 'connected', left_at = NULL",
+            'iiissii',
+            [$gameId, $seat, $sideNo, $uuid, $name, $isHost ? 1 : 0, $isBot ? 1 : 0]
         );
     }
 
@@ -133,12 +148,22 @@ final class GameStore
         return ['id' => (int) $row['id'], 'row' => $row];
     }
 
-    private static function roster(mysqli $db, int $gameId): array
+    /**
+     * $hostUuid (game.host_user_uuid) is the authority for "isHost" — NOT the
+     * per-row is_host column, which only reflects whatever was true at the
+     * moment that particular game_player row was inserted. Any reseat that
+     * goes through seatPlayer() without isHost:true (lobbyJoin(), a bot-vote
+     * refill after removeBot()'s misdeal, etc.) would otherwise silently
+     * "lose" the host flag even though game.host_user_uuid never changed —
+     * comparing against it directly here means the host badge/permissions
+     * can never drift out of sync with who can actually call Api::start().
+     */
+    private static function roster(mysqli $db, int $gameId, string $hostUuid): array
     {
         $out = [];
         foreach (self::rows(
             $db,
-            "SELECT seat_no, side_no, user_uuid, display_name, is_host, connection
+            "SELECT seat_no, side_no, user_uuid, display_name, is_bot, connection
              FROM game_player WHERE game_id = ? ORDER BY seat_no",
             'i',
             [$gameId]
@@ -147,11 +172,293 @@ final class GameStore
                 'uuid'       => $r['user_uuid'],
                 'name'       => $r['display_name'],
                 'sideNo'     => (int) $r['side_no'],
-                'isHost'     => (bool) $r['is_host'],
+                'isHost'     => $r['user_uuid'] === $hostUuid,
+                'isBot'      => (bool) $r['is_bot'],
                 'connection' => $r['connection'],
             ];
         }
         return $out;
+    }
+
+    /** @return array<int,array{uuid:string,name:string}> list, insertion order */
+    private static function viewers(mysqli $db, int $gameId): array
+    {
+        $out = [];
+        foreach (self::rows(
+            $db,
+            "SELECT user_uuid, display_name FROM game_viewer WHERE game_id = ? ORDER BY joined_at",
+            'i',
+            [$gameId]
+        ) as $r) {
+            $out[] = ['uuid' => $r['user_uuid'], 'name' => $r['display_name']];
+        }
+        return $out;
+    }
+
+    /** Start (or resume) spectating. Idempotent — re-watching just refreshes the name. */
+    public static function addViewer(mysqli $db, int $gameId, string $uuid, string $name): void
+    {
+        self::exec(
+            $db,
+            "INSERT INTO game_viewer (game_id, user_uuid, display_name, joined_at)
+             VALUES (?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)",
+            'iss',
+            [$gameId, $uuid, $name]
+        );
+    }
+
+    public static function removeViewer(mysqli $db, int $gameId, string $uuid): void
+    {
+        self::exec($db, "DELETE FROM game_viewer WHERE game_id = ? AND user_uuid = ?", 'is', [$gameId, $uuid]);
+    }
+
+    /**
+     * Submit (and optionally lock) $uuid's team-pairing proposal for a
+     * teams-mode lobby that's already full. $currentVote is the decoded
+     * game.team_vote_json ([] if none yet): {resolved, method, ballots}.
+     *
+     * Once every seated player is locked, resolves immediately: each
+     * player's proposal is normalized to a 2-way split of every seated uuid
+     * (their picks + themself vs. everyone else); the split with the most
+     * agreeing proposals wins. A tie at the top randomizes the split
+     * instead. The winning split is then written straight to
+     * game_player.seat_no/side_no — side 0 takes the even seats, side 1 the
+     * odd ones, each side's members placed in order of their prior seat_no.
+     *
+     * @param array<int,array{uuid:string}> $roster  seat_no => roster row (self::roster())
+     * @param array{resolved?:bool,method?:?string,ballots?:array} $currentVote
+     * @param string[] $picks  exactly (players/2 - 1) other seated uuids
+     * @return array{resolved:bool, method:?string}
+     */
+    public static function teamVoteSubmit(
+        mysqli $db,
+        int $gameId,
+        array $roster,
+        array $currentVote,
+        string $uuid,
+        array $picks,
+        bool $lock
+    ): array {
+        $players     = count($roster);
+        $teamSize    = intdiv($players, 2);
+        $seatedUuids = array_map(static function ($p) { return $p['uuid']; }, $roster);
+
+        if (!in_array($uuid, $seatedUuids, true)) {
+            throw new DomainException('You are not seated in this game.');
+        }
+
+        $ballots = $currentVote['ballots'] ?? [];
+        if (!empty($ballots[$uuid]['locked'])) {
+            throw new DomainException('You already locked in your pick.');
+        }
+
+        $picks = array_values(array_unique($picks));
+        foreach ($picks as $p) {
+            if ($p === $uuid) {
+                throw new DomainException("Pick your teammate(s) — your own seat is automatic.");
+            }
+            if (!in_array($p, $seatedUuids, true)) {
+                throw new DomainException('Pick must be one of the seated players.');
+            }
+        }
+        $need = $teamSize - 1;
+        if (count($picks) !== $need) {
+            throw new DomainException(
+                "Pick exactly {$need} teammate" . ($need === 1 ? '' : 's') . ' (you sent ' . count($picks) . ').'
+            );
+        }
+
+        $ballots[$uuid] = ['picks' => $picks, 'locked' => $lock];
+
+        $allLocked = true;
+        foreach ($seatedUuids as $su) {
+            if (empty($ballots[$su]['locked'])) {
+                $allLocked = false;
+                break;
+            }
+        }
+
+        if (!$allLocked) {
+            $next = ['resolved' => false, 'method' => null, 'ballots' => $ballots];
+            self::exec($db, "UPDATE game SET team_vote_json = ? WHERE id = ?", 'si', [self::j($next), $gameId]);
+            return ['resolved' => false, 'method' => null];
+        }
+
+        // --- everyone's locked: tally each proposal's 2-way split ---
+        $tally = [];   // canonical signature => {count, teams: [[uuid,...], [uuid,...]]}
+        foreach ($seatedUuids as $su) {
+            $teamA = array_merge([$su], $ballots[$su]['picks']);
+            sort($teamA);
+            $teamB = array_values(array_diff($seatedUuids, $teamA));
+            sort($teamB);
+            $pair = [$teamA, $teamB];
+            usort($pair, static function ($x, $y) { return implode(',', $x) <=> implode(',', $y); });
+            $sig = implode('|', array_map(static function ($t) { return implode(',', $t); }, $pair));
+            if (!isset($tally[$sig])) {
+                $tally[$sig] = ['count' => 0, 'teams' => $pair];
+            }
+            $tally[$sig]['count']++;
+        }
+        uasort($tally, static function ($a, $b) { return $b['count'] <=> $a['count']; });
+        $ranked = array_values($tally);
+
+        $method = 'vote';
+        if (count($ranked) > 1 && $ranked[0]['count'] === $ranked[1]['count']) {
+            $method   = 'random';
+            $shuffled = $seatedUuids;
+            shuffle($shuffled);
+            $teams = [array_slice($shuffled, 0, $teamSize), array_slice($shuffled, $teamSize)];
+        } else {
+            $teams = $ranked[0]['teams'];
+        }
+
+        // side 0 <- teams[0] on the even seats, side 1 <- teams[1] on the odd
+        // seats; within a side, keep members in their prior seat-number order.
+        $seatOfUuid = [];
+        foreach ($roster as $seatNo => $p) {
+            $seatOfUuid[$p['uuid']] = $seatNo;
+        }
+        $assignments = [];   // uuid => [newSeat, newSide]
+        foreach ($teams as $sideNo => $members) {
+            usort($members, static function ($a, $b) use ($seatOfUuid) {
+                return $seatOfUuid[$a] <=> $seatOfUuid[$b];
+            });
+            foreach ($members as $i => $memberUuid) {
+                $assignments[$memberUuid] = [$i * 2 + $sideNo, $sideNo];
+            }
+        }
+
+        // two-phase rewrite: bump everyone out of the 0..7 range first so the
+        // (game_id, seat_no) primary key never collides mid-permutation.
+        foreach (array_keys($assignments) as $memberUuid) {
+            self::exec(
+                $db,
+                "UPDATE game_player SET seat_no = seat_no + 100 WHERE game_id = ? AND user_uuid = ?",
+                'is',
+                [$gameId, $memberUuid]
+            );
+        }
+        foreach ($assignments as $memberUuid => [$newSeat, $newSide]) {
+            self::exec(
+                $db,
+                "UPDATE game_player SET seat_no = ?, side_no = ? WHERE game_id = ? AND user_uuid = ?",
+                'iiis',
+                [$newSeat, $newSide, $gameId, $memberUuid]
+            );
+        }
+
+        $final = ['resolved' => true, 'method' => $method, 'ballots' => $ballots];
+        self::exec($db, "UPDATE game SET team_vote_json = ? WHERE id = ?", 'si', [self::j($final), $gameId]);
+
+        return ['resolved' => true, 'method' => $method];
+    }
+
+    /**
+     * Submit $uuid's yes/no vote on seating a bot in $targetSeat (an open
+     * lobby seat, or a seat abandoned mid-game — connection = 'left').
+     * $currentVotes is the decoded game.bot_votes_json ([] if none yet),
+     * keyed by seat number (string keys, since it round-trips through JSON):
+     *   {"<seat>": {"proposedBy": "<uuid>", "ballots": {"<uuid>": bool}}}
+     *
+     * Unanimous: every OTHER currently-connected human (non-bot) seat must
+     * vote true. A single false vote cancels that seat's whole proposal
+     * immediately — unanimity means one "no" can never be outvoted, so there's
+     * nothing to keep pending. On full agreement, seats the bot right here
+     * (random name via BotNames::pick(), synthetic uuid via pp_uuid_for_bot())
+     * and clears the vote entry.
+     *
+     * @param array<int,array> $roster  seat_no => roster row (self::roster())
+     * @return array{resolved:bool, cancelled:bool, botName:?string}
+     */
+    public static function botVoteSubmit(
+        mysqli $db,
+        int $gameId,
+        int $players,
+        string $mode,
+        array $roster,
+        array $currentVotes,
+        int $targetSeat,
+        string $uuid,
+        bool $vote
+    ): array {
+        if ($targetSeat < 0 || $targetSeat >= $players) {
+            throw new InvalidArgumentException('Bad seat number.');
+        }
+
+        $callerSeat = null;
+        foreach ($roster as $seatNo => $p) {
+            if ($p['uuid'] === $uuid) {
+                $callerSeat = (int) $seatNo;
+                break;
+            }
+        }
+        if ($callerSeat === null) {
+            throw new DomainException('You are not seated in this game.');
+        }
+        if ($callerSeat === $targetSeat) {
+            throw new DomainException('You cannot vote on your own seat.');
+        }
+
+        $target = $roster[$targetSeat] ?? null;
+        if ($target !== null && ($target['connection'] ?? 'connected') !== 'left') {
+            throw new DomainException('That seat is already occupied.');
+        }
+
+        // needed voters = every OTHER currently-connected human (non-bot) seat
+        $needed = [];
+        foreach ($roster as $seatNo => $p) {
+            if ((int) $seatNo === $targetSeat || !empty($p['isBot'])) {
+                continue;
+            }
+            if (($p['connection'] ?? 'connected') === 'left') {
+                continue;
+            }
+            $needed[] = $p['uuid'];
+        }
+        if (!in_array($uuid, $needed, true)) {
+            throw new DomainException('You are not eligible to vote on this seat.');
+        }
+
+        $key   = (string) $targetSeat;
+        $entry = $currentVotes[$key] ?? ['proposedBy' => $uuid, 'ballots' => []];
+        $entry['ballots'][$uuid] = $vote;
+
+        if ($vote === false) {
+            unset($currentVotes[$key]);
+            self::exec($db, "UPDATE game SET bot_votes_json = ? WHERE id = ?", 'si', [self::j($currentVotes), $gameId]);
+            return ['resolved' => false, 'cancelled' => true, 'botName' => null];
+        }
+
+        $allYes = true;
+        foreach ($needed as $nu) {
+            if (empty($entry['ballots'][$nu])) {
+                $allYes = false;
+                break;
+            }
+        }
+
+        if (!$allYes) {
+            $currentVotes[$key] = $entry;
+            self::exec($db, "UPDATE game SET bot_votes_json = ? WHERE id = ?", 'si', [self::j($currentVotes), $gameId]);
+            return ['resolved' => false, 'cancelled' => false, 'botName' => null];
+        }
+
+        $botUuid = pp_uuid_for_bot($gameId, $targetSeat);
+        $botName = BotNames::pick();
+        $sideNo  = $mode === 'teams' ? $targetSeat % 2 : $targetSeat;
+        self::seatPlayer($db, $gameId, $targetSeat, $sideNo, $botUuid, $botName, false, true);
+
+        unset($currentVotes[$key]);
+        self::exec($db, "UPDATE game SET bot_votes_json = ? WHERE id = ?", 'si', [self::j($currentVotes), $gameId]);
+
+        return ['resolved' => true, 'cancelled' => false, 'botName' => $botName];
+    }
+
+    /** Host sets or clears the table's meeting link (e.g. a Google Meet URL). */
+    public static function setMeetUrl(mysqli $db, int $gameId, ?string $url): void
+    {
+        self::exec($db, "UPDATE game SET meet_url = ? WHERE id = ?", 'si', [$url, $gameId]);
     }
 
     /** Reconstruct the full game (shell + active hand) from the DB. */
@@ -180,9 +487,15 @@ final class GameStore
         if ($handRow && $handRow['state_json'] !== null && $handRow['state_json'] !== '') {
             $g->importHand(json_decode((string) $handRow['state_json'], true));
         }
-        $g->roster   = self::roster($db, $gameId);
-        $g->journal  = self::journal($db, $gameId);
-        $g->joinCode = $game['join_code'] ?? null;
+        $g->roster    = self::roster($db, $gameId, (string) $game['host_user_uuid']);
+        $g->viewers   = self::viewers($db, $gameId);
+        $g->journal   = self::journal($db, $gameId);
+        $g->joinCode  = $game['join_code'] ?? null;
+        $g->meetUrl   = $game['meet_url'] ?? null;
+        $tv = !empty($game['team_vote_json']) ? json_decode((string) $game['team_vote_json'], true) : null;
+        $g->teamVote  = is_array($tv) ? $tv : [];
+        $bv = !empty($game['bot_votes_json']) ? json_decode((string) $game['bot_votes_json'], true) : null;
+        $g->botVotes  = is_array($bv) ? $bv : [];
         if ($handRow && !empty($handRow['ready_json'])) {
             $rl = json_decode((string) $handRow['ready_json'], true);
             $g->readyList = is_array($rl) ? array_map('intval', $rl) : [];
@@ -196,7 +509,7 @@ final class GameStore
     {
         $rows = self::rows(
             $db,
-            "SELECT h.hand_no, h.bid_winner_seat, h.bid_winner_side_no, h.winning_bid, h.bid_made, h.trump,
+            "SELECT h.hand_no, h.bid_winner_seat, h.bid_winner_side_no, h.winning_bid, h.bid_made, h.in_suit,
                     hs.side_no, hs.meld_points, hs.counters_captured, hs.hand_score, hs.score_after
              FROM hand h
              JOIN hand_side hs ON hs.hand_id = h.id
@@ -214,7 +527,7 @@ final class GameStore
                     'bidderSeat' => $r['bid_winner_seat'] !== null ? (int) $r['bid_winner_seat'] : null,
                     'bidderSide' => $r['bid_winner_side_no'] !== null ? (int) $r['bid_winner_side_no'] : null,
                     'bid'        => (int) $r['winning_bid'],
-                    'trump'      => $r['trump'],
+                    'inSuit'     => $r['in_suit'],
                     'made'       => (int) $r['bid_made'] === 1,
                     'sides'      => [],
                 ];
@@ -240,10 +553,10 @@ final class GameStore
 
         self::exec(
             $db,
-            "INSERT INTO hand (game_id, hand_no, dealer_seat, phase, trump, deck_json, state_json, started_at)
+            "INSERT INTO hand (game_id, hand_no, dealer_seat, phase, in_suit, deck_json, state_json, started_at)
              VALUES (?, ?, ?, 'auction', NULL, ?, ?, NOW())
              ON DUPLICATE KEY UPDATE
-               dealer_seat = VALUES(dealer_seat), phase = 'auction', trump = NULL,
+               dealer_seat = VALUES(dealer_seat), phase = 'auction', in_suit = NULL,
                deck_json = VALUES(deck_json), state_json = VALUES(state_json),
                bid_winner_seat = NULL, bid_winner_side_no = NULL, winning_bid = NULL,
                bid_made = NULL, scored_at = NULL",
@@ -293,13 +606,13 @@ final class GameStore
         self::exec(
             $db,
             "UPDATE hand SET
-               phase = ?, trump = ?, bid_winner_seat = ?, bid_winner_side_no = ?,
+               phase = ?, in_suit = ?, bid_winner_seat = ?, bid_winner_side_no = ?,
                winning_bid = ?, bid_made = ?, state_json = ?,
                scored_at = IF(? = 'scored', COALESCE(scored_at, NOW()), scored_at)
              WHERE id = ?",
             'ssiiiissi',
             [
-                $h['phase'], $h['trump'], $h['bidWinnerSeat'], $h['bidWinnerSideNo'],
+                $h['phase'], $h['inSuit'], $h['bidWinnerSeat'], $h['bidWinnerSideNo'],
                 $h['winningBid'], $bidMade, self::j($h), $h['phase'], $handId,
             ]
         );
@@ -312,7 +625,11 @@ final class GameStore
     private static function flushHistory(mysqli $db, int $gameId, int $handId, State $g): void
     {
         $h      = $g->hand;
-        $roster = $g->roster ?: self::roster($db, $gameId);
+        $roster = $g->roster ?: self::roster(
+            $db,
+            $gameId,
+            (string) ($db->query("SELECT host_user_uuid FROM game WHERE id = {$gameId}")->fetch_assoc()['host_user_uuid'] ?? '')
+        );
         $uuidOf = static function (int $seat) use ($roster): string {
             return $roster[$seat]['uuid'] ?? '';
         };
@@ -422,6 +739,14 @@ final class GameStore
                 'ii',
                 [$g->gameWinnerSideNo, $gameId]
             );
+            // bots don't linger "connected" at a finished table — same
+            // connection/left_at shape a human leaving gets (Api::lobbyLeave)
+            self::exec(
+                $db,
+                "UPDATE game_player SET connection = 'left', left_at = NOW() WHERE game_id = ? AND is_bot = 1",
+                'i',
+                [$gameId]
+            );
         }
     }
 
@@ -462,6 +787,7 @@ final class GameStore
                 $s['uuid']       = $g->roster[$seat]['uuid'];
                 $s['name']       = $g->roster[$seat]['name'];
                 $s['isHost']     = $g->roster[$seat]['isHost'];
+                $s['isBot']      = $g->roster[$seat]['isBot'];
                 $s['connection'] = $g->roster[$seat]['connection'];
             }
         }

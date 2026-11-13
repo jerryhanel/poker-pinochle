@@ -11,13 +11,9 @@ declare(strict_types=1);
 // Exit code is non-zero if any assertion fails.
 // -----------------------------------------------------------------------------
 
-require_once __DIR__ . '/Cards.php';
-require_once __DIR__ . '/Deck.php';
-require_once __DIR__ . '/Auction.php';
-require_once __DIR__ . '/Meld.php';
-require_once __DIR__ . '/Trick.php';
-require_once __DIR__ . '/Score.php';
-require_once __DIR__ . '/State.php';
+require_once __DIR__ . '/autoload.php';
+
+use PokerPinochle\Engine\{Cards, Deck, Auction, Meld, Trick, Score, State};
 
 $args    = array_slice($argv, 1);
 $doTests = !in_array('--hand', $args, true);
@@ -92,15 +88,15 @@ throws(function () { $z = Auction::start(4, 0); Auction::apply($z, 1, 'bid', 21)
 
 sec('Meld');
 $m = Meld::detect(['KS', 'QS', 'AH', 'AD', 'AC'], 'S');
-ok($m['total'] === 4, 'royal marriage in trump = 4');
+ok($m['total'] === 4, 'royal marriage in suit = 4');
 $m = Meld::detect(['KH', 'QH', 'JS', 'JD', '9C'], 'S');
-ok($m['total'] === 2, 'off-trump marriage = 2');
+ok($m['total'] === 2, 'off-suit marriage = 2');
 $m = Meld::detect(['9S', 'KH', 'QD', 'JC', '9H'], 'S');
-ok($m['total'] === 1, '9 of trump = 1');
-$m = Meld::detect(['9S', 'KH', 'QD', 'JC', '9H'], 'NT');
-ok($m['total'] === 0, 'no 9-of-trump meld under NT');
+ok($m['total'] === 1, '9 in suit = 1');
+$m = Meld::detect(['9S', 'KH', 'QD', 'JC', '9H'], 'NS');
+ok($m['total'] === 0, 'no 9-in-suit meld under NS');
 $m = Meld::detect(['9S', '9S', 'KH', 'QD', 'JC'], 'S');
-ok($m['total'] === 2, 'both 9s of trump = 2');
+ok($m['total'] === 2, 'both 9s in suit = 2');
 $m = Meld::detect(['KS', 'KS', 'QS', 'QS', 'AH'], 'S');
 ok($m['total'] === 8 && count($m['items']) === 2, 'double royal marriage = 8 (two items)');
 $m = Meld::detect(['QS', 'QS', 'JD', 'JD', 'AH'], 'S');
@@ -112,25 +108,25 @@ ok($m['total'] === 10, 'four aces = 10');
 $m = Meld::detect(['KS', 'KH', 'KD', 'KC', 'JD'], 'H');
 ok($m['total'] === 8, 'four kings = 8');
 $m = Meld::detect(['KS', 'QS', 'JD', '9S', 'AH'], 'S');
-ok($m['total'] === 4 + 4 + 1, 'card reuse: QS in marriage AND pinochle, plus 9 of trump = 9');
-$m = Meld::detect(['KS', 'QS', 'AH', 'AD', 'AC'], 'NT');
-ok($m['total'] === 2, 'under NT the marriage is only 2');
+ok($m['total'] === 4 + 4 + 1, 'card reuse: QS in marriage AND pinochle, plus 9 in suit = 9');
+$m = Meld::detect(['KS', 'QS', 'AH', 'AD', 'AC'], 'NS');
+ok($m['total'] === 2, 'under NS the marriage is only 2');
 
 sec('Trick');
 ok(count(Trick::legalPlays(['AS', 'KH', '9D'], [], 'S')) === 3, 'leader may play anything');
 $played = [['seat' => 0, 'card' => 'QS']];
 ok(Trick::legalPlays(['KS', '9S', 'AH'], $played, 'H') === ['KS'], 'must follow AND beat when able');
 ok(Trick::legalPlays(['9S', 'JS', 'AH'], [['seat' => 0, 'card' => 'KS']], 'H') === ['9S', 'JS'], 'follow but cannot beat -> any of the suit');
-ok(Trick::legalPlays(['9H', 'AH', 'KD'], [['seat' => 0, 'card' => 'QS']], 'H') === ['9H', 'AH'], 'void in led suit -> must trump');
+ok(Trick::legalPlays(['9H', 'AH', 'KD'], [['seat' => 0, 'card' => 'QS']], 'H') === ['9H', 'AH'], 'void in led suit -> must play in suit');
 $pl = [['seat' => 0, 'card' => 'QS'], ['seat' => 1, 'card' => 'KH']];
-ok(Trick::legalPlays(['9H', 'AH', 'JC'], $pl, 'H') === ['AH'], 'trump already down -> must over-trump when able');
-ok(Trick::legalPlays(['9H', 'JC'], $pl, 'H') === ['9H'], 'cannot over-trump -> must still play the (lower) trump, not sluff');
-ok(count(Trick::legalPlays(['9C', 'JC', 'KD'], [['seat' => 0, 'card' => 'QS']], 'H')) === 3, 'void with no trump -> sluff anything');
-ok(count(Trick::legalPlays(['9C', 'JC', 'KD'], [['seat' => 0, 'card' => 'QS']], 'NT')) === 3, 'no-trump: void -> sluff anything');
+ok(Trick::legalPlays(['9H', 'AH', 'JC'], $pl, 'H') === ['AH'], 'in suit already down -> must beat it when able');
+ok(Trick::legalPlays(['9H', 'JC'], $pl, 'H') === ['9H'], 'cannot beat it -> must still play the (lower) in-suit card, not sluff');
+ok(count(Trick::legalPlays(['9C', 'JC', 'KD'], [['seat' => 0, 'card' => 'QS']], 'H')) === 3, 'void with no suit in hand -> sluff anything');
+ok(count(Trick::legalPlays(['9C', 'JC', 'KD'], [['seat' => 0, 'card' => 'QS']], 'NS')) === 3, 'no suit in play: void -> sluff anything');
 $full = [['seat' => 0, 'card' => 'KS'], ['seat' => 1, 'card' => 'AS'], ['seat' => 2, 'card' => '9S'], ['seat' => 3, 'card' => 'QD']];
 ok(Trick::winnerSeat($full, 'H') === 1, 'highest of the led suit wins');
 $full2 = [['seat' => 0, 'card' => 'AS'], ['seat' => 1, 'card' => '9H'], ['seat' => 2, 'card' => 'TS'], ['seat' => 3, 'card' => 'KH']];
-ok(Trick::winnerSeat($full2, 'H') === 3, 'a trump beats the top of the led suit');
+ok(Trick::winnerSeat($full2, 'H') === 3, 'a card in suit beats the top of the led suit');
 $tie = [['seat' => 0, 'card' => 'AS'], ['seat' => 1, 'card' => 'AS'], ['seat' => 2, 'card' => '9S'], ['seat' => 3, 'card' => 'KS']];
 ok(Trick::winnerSeat($tie, 'H') === 0, 'identical top cards: the earlier play keeps it');
 ok(Trick::counters($full) === 2, 'counters in the trick (K + A, Q/9 are not counters)');
@@ -160,10 +156,9 @@ ok($g->hand['phase'] === 'auction' && $g->auctionTurnSeat() === 1, 'deal -> auct
 $g->bid(1, 'bid', 4);
 $g->bid(2, 'pass'); $g->bid(3, 'pass'); $g->bid(0, 'pass');
 ok($g->hand['phase'] === 'declare' && $g->hand['bidWinnerSeat'] === 1 && $g->hand['bidWinnerSideNo'] === 1, 'auction -> declare, seat 1 / side 1 won at 4');
-$g->declareTrump(1, 'S');
-ok($g->hand['phase'] === 'draw' && $g->drawTurnSeat() === 1, 'declare -> draw, bid winner draws first');
-for ($k = 0; $k < 4; $k++) {
-    $seat = $g->drawTurnSeat();
+$g->declareInSuit(1, 'S');
+ok($g->hand['phase'] === 'draw' && $g->pendingDiscardSeats() === [0, 1, 2, 3], 'declare -> draw, all four seats pending, no turn order');
+foreach ($g->pendingDiscardSeats() as $seat) {
     $g->draw($seat, []);   // everyone stands pat
 }
 ok($g->hand['phase'] === 'play', 'all drawn -> play');
@@ -208,8 +203,8 @@ sec('State — serialise / restore mid-hand (Phase 2 round-trip)');
 $sr = new State(4, 'teams');
 $sr->startHand(Deck::shuffle(Deck::fresh(), 4242), 0);
 while ($sr->hand['phase'] === 'auction') { $sr->bid($sr->auctionTurnSeat(), 'pass'); }
-$sr->declareTrump($sr->hand['bidWinnerSeat'], 'H');
-while ($sr->hand['phase'] === 'draw') { $sr->draw($sr->drawTurnSeat(), []); }
+$sr->declareInSuit($sr->hand['bidWinnerSeat'], 'H');
+foreach ($sr->pendingDiscardSeats() as $seat) { $sr->draw($seat, []); }
 while ($sr->hand['phase'] === 'play' && count($sr->hand['tricks']) < 2) {
     $s = $sr->playTurnSeat();
     $sr->play($s, $sr->legalPlaysFor($s)[0]);
@@ -252,9 +247,9 @@ while (!$g2->isGameOver() && $hn++ < 300) {
     while ($g2->hand['phase'] === 'auction') {
         $g2->bid($g2->auctionTurnSeat(), 'pass');
     }
-    $g2->declareTrump($g2->hand['bidWinnerSeat'], 'S');
-    while ($g2->hand['phase'] === 'draw') {
-        $g2->draw($g2->drawTurnSeat(), []);
+    $g2->declareInSuit($g2->hand['bidWinnerSeat'], 'S');
+    foreach ($g2->pendingDiscardSeats() as $seat) {
+        $g2->draw($seat, []);
     }
     $steps = 0;
     while ($g2->hand['phase'] === 'play' && $steps++ < 40) {
@@ -281,7 +276,7 @@ $g->startHand(Deck::shuffle(Deck::fresh(), 20260909), 0);
 
 echo "\nDealt (dealer = seat {$g->hand['dealerSeat']}):\n";
 foreach ($g->hand['dealt'] as $seat => $cards) {
-    printf("  seat %d (side %d): %s\n", $seat, $g->seatSide($seat), implode(' ', array_map(['Cards', 'label'], $cards)));
+    printf("  seat %d (side %d): %s\n", $seat, $g->seatSide($seat), implode(' ', array_map([Cards::class, 'label'], $cards)));
 }
 
 // scripted auction: seat 2 buys it for 6
@@ -292,24 +287,29 @@ $g->bid(0, 'pass');
 $res = Auction::result($g->hand['auction']);
 printf("\nAuction: seat %d wins at %d%s\n", $res['winnerSeat'], $res['amount'], $res['stuck'] ? ' (stuck)' : '');
 
-$g->declareTrump($g->hand['bidWinnerSeat'], 'S');
-echo "Trump: " . Cards::SUIT_NAME[$g->hand['trump']] . "\n";
+$g->declareInSuit($g->hand['bidWinnerSeat'], 'S');
+echo "In suit: " . Cards::SUIT_NAME[$g->hand['inSuit']] . "\n";
 
-// scripted draw: bid winner pitches its two lowest non-counters, others stand pat
-while ($g->hand['phase'] === 'draw') {
-    $seat = $g->drawTurnSeat();
+// scripted discard round: bid winner pitches its two lowest non-counters, others stand pat.
+// No turn order — every seat could go in any order (even simultaneously from
+// the client's point of view); the harness just processes them in seat order.
+// Nobody's replacements are dealt until the whole table has discarded.
+foreach ($g->pendingDiscardSeats() as $seat) {
     if ($seat === $g->hand['bidWinnerSeat']) {
         $hand = $g->hand['hands'][$seat];
         $noncounters = array_values(array_filter($hand, function ($c) { return !Cards::isCounter($c); }));
         usort($noncounters, function ($a, $b) { return Cards::value($a) - Cards::value($b); });
         $pitch = array_slice($noncounters, 0, min(2, count($noncounters)));
         $g->draw($seat, $pitch);
-        echo "Draw: seat {$seat} pitches " . implode(' ', array_map(['Cards', 'label'], $pitch)) .
-             ", draws " . implode(' ', array_map(['Cards', 'label'], $g->hand['drawRecord'][$seat]['drawn'])) . "\n";
+        echo "Discard: seat {$seat} pitches " . implode(' ', array_map([Cards::class, 'label'], $pitch)) . "\n";
     } else {
         $g->draw($seat, []);
-        echo "Draw: seat {$seat} stands pat\n";
+        echo "Discard: seat {$seat} stands pat\n";
     }
+}
+echo "Replacements dealt (all at once, now that everyone has discarded):\n";
+foreach ($g->hand['drawRecord'] as $seat => $rec) {
+    printf("  seat %d drew: %s\n", $seat, $rec['drawn'] ? implode(' ', array_map([Cards::class, 'label'], $rec['drawn'])) : '(none)');
 }
 
 echo "\nMeld:\n";

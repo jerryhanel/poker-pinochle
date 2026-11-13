@@ -1,22 +1,9 @@
 <?php
 declare(strict_types=1);
 
-// -----------------------------------------------------------------------------
-// Score — one hand's outcome, plus running totals and game end.
-//
-//  * A side must win at least ONE trick to keep its meld (meld forfeited on
-//    zero tricks). This applies to EVERY side.
-//  * Non-bidding side: score = kept meld + counters captured in tricks.
-//  * Bidding side: total = kept meld + counters captured.
-//      - total >= bid  -> "made": score the full total (it may exceed the bid).
-//      - total <  bid   -> "set": forfeit ALL meld and score -(bid) flat
-//                          (captured counters do not offset the penalty).
-//  * "Made" is >= : meld + counters exactly equal to the bid counts as made.
-//
-// Game targets:  teams   4p->50, 6p->150, 8p->200
-//                cutthroat  25 x player_count  (3p->75, 5p->125, 7p->175)
-// First side to reach the target ends the game (no "bid it out" rule).
-// -----------------------------------------------------------------------------
+namespace PokerPinochle\Engine;
+
+use InvalidArgumentException;
 
 final class Score
 {

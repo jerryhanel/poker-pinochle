@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/Cards.php';
-require_once __DIR__ . '/Meld.php';
+require_once __DIR__ . '/autoload.php';
+
+use PokerPinochle\Engine\{Cards, Meld};
 
 // -----------------------------------------------------------------------------
 // meld_lab — ad hoc / matrix exploration of Meld::detect(), for checking how
@@ -13,7 +14,7 @@ require_once __DIR__ . '/Meld.php';
 //
 // Two ways to drive it:
 //   CLI:     php engine/meld_lab.php S KS KS QS AH AD
-//            (first arg is trump: S/H/D/C/NT; the rest are card codes,
+//            (first arg is the suit: S/H/D/C/NT; the rest are card codes,
 //             duplicates allowed, doesn't need to be a real 5-card hand)
 //   Browser: /poker-pinochle/dev.php?meld=1  (a form — see dev.php)
 //
@@ -21,17 +22,17 @@ require_once __DIR__ . '/Meld.php';
 // -----------------------------------------------------------------------------
 
 /** Render one hand's meld breakdown as plain text (no trailing exit/echo). */
-function meld_lab_render(array $hand, string $trump): string
+function meld_lab_render(array $hand, string $inSuit): string
 {
-    $labels = implode(' ', array_map(['Cards', 'label'], $hand));
-    $det = Meld::detect($hand, $trump);
+    $labels = implode(' ', array_map([Cards::class, 'label'], $hand));
+    $det = Meld::detect($hand, $inSuit);
 
-    $out = "hand: {$labels}   trump: " . Cards::SUIT_GLYPH[$trump] . "\n";
+    $out = "hand: {$labels}   in suit: " . Cards::SUIT_GLYPH[$inSuit] . "\n";
     if (empty($det['items'])) {
         $out .= "  (no meld)\n";
     } else {
         foreach ($det['items'] as $it) {
-            $cards = implode('+', array_map(['Cards', 'label'], $it['cards']));
+            $cards = implode('+', array_map([Cards::class, 'label'], $it['cards']));
             $out .= sprintf("  %-18s %-10s +%d\n", $it['label'], "[{$cards}]", $it['points']);
         }
     }
@@ -44,25 +45,25 @@ function meld_lab_render(array $hand, string $trump): string
  * exercise Meld::detect()'s min-count logic. Purely illustrative — not
  * assertions; read the output and judge for yourself.
  *
- * @return array<int, array{0:string,1:string[],2:string}>  [label, hand, trump]
+ * @return array<int, array{0:string,1:string[],2:string}>  [label, hand, in-suit]
  */
 function meld_lab_scenarios(): array
 {
     return [
-        ['1 king + 1 queen (trump) = single royal marriage',   ['KS', 'QS'],                     'S'],
-        ['2 kings + 2 queens (trump) = double royal marriage', ['KS', 'KS', 'QS', 'QS'],         'S'],
-        ['2 kings + 1 queen (trump) = only 1 marriage',        ['KS', 'KS', 'QS'],                'S'],
-        ['1 king + 2 queens (trump) = only 1 marriage',        ['KS', 'QS', 'QS'],                'S'],
+        ['1 king + 1 queen (in suit) = single royal marriage', ['KS', 'QS'],                     'S'],
+        ['2 kings + 2 queens (in suit) = double royal marriage', ['KS', 'KS', 'QS', 'QS'],       'S'],
+        ['2 kings + 1 queen (in suit) = only 1 marriage',      ['KS', 'KS', 'QS'],                'S'],
+        ['1 king + 2 queens (in suit) = only 1 marriage',      ['KS', 'QS', 'QS'],                'S'],
         ['2 kings only, no queen = no marriage',               ['KS', 'KS'],                      'S'],
 
-        ['1 king + 1 queen (off-trump) = single marriage',     ['KH', 'QH'],                      'S'],
-        ['2 kings + 2 queens (off-trump) = double marriage',   ['KH', 'KH', 'QH', 'QH'],          'S'],
+        ['1 king + 1 queen (off suit) = single marriage',      ['KH', 'QH'],                      'S'],
+        ['2 kings + 2 queens (off suit) = double marriage',    ['KH', 'KH', 'QH', 'QH'],          'S'],
 
-        ['2 kings + 2 queens under NT = double, off value',    ['KS', 'KS', 'QS', 'QS'],          'NT'],
+        ['2 kings + 2 queens under NS = double, off value',    ['KS', 'KS', 'QS', 'QS'],          'NS'],
 
-        ['1 nine of trump',                                    ['9S'],                            'S'],
-        ['2 nines of trump',                                   ['9S', '9S'],                      'S'],
-        ['2 nines, but NT declared = no meld',                 ['9S', '9S'],                      'NT'],
+        ['1 nine in suit',                                     ['9S'],                            'S'],
+        ['2 nines in suit',                                    ['9S', '9S'],                      'S'],
+        ['2 nines, but NS declared = no meld',                 ['9S', '9S'],                      'NS'],
         ['nine of an off-suit does not meld',                  ['9H'],                             'S'],
 
         ['1 pinochle (QS + JD)',                               ['QS', 'JD'],                      'S'],
@@ -85,15 +86,15 @@ if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
     $args = array_slice($argv, 1);
 
     if (empty($args)) {
-        foreach (meld_lab_scenarios() as [$label, $hand, $trump]) {
-            echo "-- {$label} --\n" . meld_lab_render($hand, $trump) . "\n";
+        foreach (meld_lab_scenarios() as [$label, $hand, $inSuit]) {
+            echo "-- {$label} --\n" . meld_lab_render($hand, $inSuit) . "\n";
         }
         exit(0);
     }
 
-    $trump = strtoupper(array_shift($args));
-    if (!in_array($trump, ['S', 'H', 'D', 'C', 'NT'], true)) {
-        fwrite(STDERR, "First arg must be trump: S, H, D, C or NT.\n");
+    $inSuit = strtoupper(array_shift($args));
+    if (!in_array($inSuit, ['S', 'H', 'D', 'C', 'NS'], true)) {
+        fwrite(STDERR, "First arg must be the suit: S, H, D, C or NT.\n");
         exit(1);
     }
     $hand = array_map('strtoupper', $args);
@@ -103,5 +104,5 @@ if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
             exit(1);
         }
     }
-    echo meld_lab_render($hand, $trump);
+    echo meld_lab_render($hand, $inSuit);
 }

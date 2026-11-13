@@ -15,9 +15,10 @@ function pp_config(): array
 {
     static $cfg = null;
     if ($cfg === null) {
-        $file = is_file(PP_ROOT . '/config.php')
-            ? PP_ROOT . '/config.php'
-            : PP_ROOT . '/config.sample.php';
+        $file = PP_ROOT . '/config.php';
+        if (!is_file($file)) {
+            throw new RuntimeException('config.php not found — copy config.sample.php and fill in real values.');
+        }
         $cfg = require $file;
     }
     return $cfg;
@@ -68,6 +69,25 @@ function pp_uuid_for_name(string $name): string
 {
     $key = strtolower(trim((string)preg_replace('/\s+/', ' ', $name)));
     $hex = md5('pp:name:' . $key);
+    return sprintf(
+        '%s-%s-%s-%s-%s',
+        substr($hex, 0, 8),
+        substr($hex, 8, 4),
+        substr($hex, 12, 4),
+        substr($hex, 16, 4),
+        substr($hex, 20, 12)
+    );
+}
+
+/**
+ * Synthetic uuid for a bot seated at $gameId/$seat. A distinct salt namespace
+ * ('pp:bot:' vs pp_uuid_for_name()'s 'pp:name:') guarantees a bot's uuid can
+ * never collide with a real player's name-derived one, no matter what name a
+ * human picks.
+ */
+function pp_uuid_for_bot(int $gameId, int $seat): string
+{
+    $hex = md5('pp:bot:' . $gameId . ':' . $seat);
     return sprintf(
         '%s-%s-%s-%s-%s',
         substr($hex, 0, 8),

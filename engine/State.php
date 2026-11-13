@@ -1,33 +1,10 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/Cards.php';
-require_once __DIR__ . '/Deck.php';
-require_once __DIR__ . '/Auction.php';
-require_once __DIR__ . '/Meld.php';
-require_once __DIR__ . '/Trick.php';
-require_once __DIR__ . '/Score.php';
+namespace PokerPinochle\Engine;
 
-// -----------------------------------------------------------------------------
-// State — authoritative in-memory state for one game and its in-flight hand.
-//
-// This is the seam Phase 2 (persistence) and Phase 3 (HTTP API) build on: every
-// mutator validates turn + phase and throws DomainException on an illegal move,
-// exactly as the API endpoints will need. No DB, no network here.
-//
-// Phases:  auction -> declare -> draw -> meld -> play -> scored
-//
-// Ratified rule defaults baked in (override via the $rules array; frozen per
-// match in game.rules_json later):
-//   keep_min .......................... 0 (2-5p) / 2 (6p) / 3 (7-8p)
-//   stand_pat ......................... allowed (discard 0)
-//   discard_counters_ok ............... yes
-//   draw_order ........................ bid winner first, then clockwise
-//   reshuffle_includes_round_discards . yes
-//   make_is_gte ....................... yes (exact == bid is "made")
-//   meld_card_reuse ................... yes (one card, two melds)
-//   meld_requires_trick ............... yes (no trick won -> meld forfeited)
-// -----------------------------------------------------------------------------
+use DomainException;
+use InvalidArgumentException;
 
 final class State
 {
@@ -54,6 +31,25 @@ final class State
 
     /** @var int[] seats that have clicked "ready for the next hand". Carried. */
     public $readyList = [];
+
+    /** @var array<int,array{uuid:string,name:string}> spectators — not seated, no side. Carried, set by GameStore::load. */
+    public $viewers = [];
+
+    /**
+     * Pre-deal team-pairing vote (teams mode only). uuid => {picks:[uuid,...], locked:bool}.
+     * Carried, set by GameStore::load(); [] means no vote in progress.
+     */
+    public $teamVote = [];
+
+    /**
+     * Pending bot-seat vote proposals, keyed by target seat number (string
+     * keys, round-trips through JSON): {"<seat>": {proposedBy, ballots:{uuid:bool}}}.
+     * Carried, set by GameStore::load(); [] means no proposals pending.
+     */
+    public $botVotes = [];
+
+    /** @var string|null host-set meeting link (e.g. Google Meet). Carried, set by GameStore::load. */
+    public $meetUrl = null;
 
     public function __construct(int $players, string $mode, array $rules = [])
     {
@@ -103,8 +99,8 @@ final class State
 
     public static function defaultKeepMin(int $players): int
     {
-        if ($players >= 7) return 3;
-        if ($players === 6) return 2;
+        if ($players >= 6) return 2;
+        if ($players === 5) return 1;
         return 0;
     }
 
@@ -145,13 +141,12 @@ final class State
             'stock'        => $deal['stock'],
             'discardPile'  => [],
             'auction'      => Auction::start($this->players, $this->dealerSeat),
-            'trump'        => null,
+            'inSuit'       => null,
             'bidWinnerSeat'   => null,
             'bidWinnerSideNo' => null,
             'winningBid'      => null,
             'stuck'          => false,
             'drawOrder'   => [],
-            'drawPos'     => 0,
             'drawRecord'  => [],
             'final'       => [],           // post-draw 5-card hands (set at meld)
             'meldRecord'  => [],
@@ -202,16 +197,16 @@ final class State
 
     // --------------------------------------------------------------- declare
 
-    public function declareTrump(int $seat, string $suit): void
+    public function declareInSuit(int $seat, string $suit): void
     {
         $this->requirePhase('declare');
         if ($seat !== $this->hand['bidWinnerSeat']) {
-            throw new DomainException('Only the bid winner declares trump.');
+            throw new DomainException('Only the bid winner names the suit.');
         }
-        if (!in_array($suit, ['S', 'H', 'D', 'C', 'NT'], true)) {
-            throw new DomainException("Trump must be S, H, D, C or NT.");
+        if (!in_array($suit, ['S', 'H', 'D', 'C', 'NS'], true)) {
+            throw new DomainException("Suit must be S, H, D, C or NS.");
         }
-        $this->hand['trump'] = $suit;
+        $this->hand['inSuit'] = $suit;
 
         // set the draw order
         $order = [];
@@ -222,27 +217,43 @@ final class State
             $order[] = ($start + $k) % $this->players;
         }
         $this->hand['drawOrder'] = $order;
-        $this->hand['drawPos']   = 0;
         $this->hand['phase']     = 'draw';
     }
 
     // ------------------------------------------------------------------ draw
 
-    public function drawTurnSeat(): ?int
+    /** Seats that haven't discarded yet this round (any of them may act now — no turn order). */
+    public function pendingDiscardSeats(): array
     {
         if (!$this->hand || $this->hand['phase'] !== 'draw') {
-            return null;
+            return [];
         }
-        return $this->hand['drawOrder'][$this->hand['drawPos']];
+        $out = [];
+        for ($seat = 0; $seat < $this->players; $seat++) {
+            if (!isset($this->hand['drawRecord'][$seat])) {
+                $out[] = $seat;
+            }
+        }
+        return $out;
     }
 
-    /** @param string[] $discards cards to pitch (may be []). */
+    /**
+     * @param string[] $discards cards to pitch (may be []).
+     *
+     * Every seat may discard whenever it likes — there's no turn order here,
+     * only "have you gone yet this round." Nobody's replacement cards are
+     * dealt until the whole table has discarded; only once the last seat
+     * pitches does the engine deal replacements to everyone in draw order,
+     * reshuffling the full round's discard pile back into the stock if it
+     * runs dry. This keeps every seat's redraw odds identical (all drawing
+     * from the same pool) instead of whoever discards first getting first
+     * crack at a fatter stock.
+     */
     public function draw(int $seat, array $discards): void
     {
         $this->requirePhase('draw');
-        $expected = $this->drawTurnSeat();
-        if ($seat !== $expected) {
-            throw new DomainException("Not seat {$seat}'s turn to draw (waiting on {$expected}).");
+        if (isset($this->hand['drawRecord'][$seat])) {
+            throw new DomainException("Seat {$seat} has already discarded this round.");
         }
 
         $maxDiscard = 5 - (int) $this->rules['keep_min'];
@@ -254,7 +265,7 @@ final class State
             throw new DomainException('Standing pat is not allowed — discard at least one.');
         }
 
-        // validate the pitch against a working copy of the hand
+        // validate + apply the pitch against the seat's hand
         $work = $this->hand['hands'][$seat];
         foreach ($discards as $c) {
             if (!Cards::isValid($c)) {
@@ -267,39 +278,48 @@ final class State
                 throw new DomainException("You don't hold {$c}.");
             }
         }
+        $this->hand['hands'][$seat] = $work;
 
-        // the pitch joins the discard pile now
+        // the pitch joins the discard pile now — replacements come later, for everyone at once
         foreach ($discards as $c) {
             $this->hand['discardPile'][] = $c;
         }
 
-        // draw n replacements; reshuffle the eligible discard pile if the stock dries up
-        $drawn = [];
-        for ($i = 0; $i < $n; $i++) {
-            if (count($this->hand['stock']) === 0) {
-                $eligible = $this->hand['discardPile'];
-                if (!$this->rules['reshuffle_includes_round_discards']) {
-                    foreach ($discards as $c) {
-                        Cards::removeOne($eligible, $c);   // can't redraw your own just-pitched card
+        $this->hand['drawRecord'][$seat] = ['discards' => array_values($discards), 'drawn' => []];
+
+        if (count($this->hand['drawRecord']) >= $this->players) {
+            $this->dealReplacements();
+            $this->enterMeld();
+        }
+    }
+
+    /** Once every seat has discarded, deal everyone's replacements from one shared pool. */
+    private function dealReplacements(): void
+    {
+        foreach ($this->hand['drawOrder'] as $seat) {
+            $discards = $this->hand['drawRecord'][$seat]['discards'];
+            $n = count($discards);
+            $drawn = [];
+            for ($i = 0; $i < $n; $i++) {
+                if (count($this->hand['stock']) === 0) {
+                    $eligible = $this->hand['discardPile'];
+                    if (!$this->rules['reshuffle_includes_round_discards']) {
+                        foreach ($discards as $c) {
+                            Cards::removeOne($eligible, $c);   // can't redraw your own just-pitched card
+                        }
+                    }
+                    if (count($eligible) === 0) {
+                        throw new DomainException('Stock exhausted with nothing eligible to reshuffle.');
+                    }
+                    $this->hand['stock'] = Deck::shuffle($eligible);
+                    foreach ($eligible as $c) {
+                        Cards::removeOne($this->hand['discardPile'], $c);   // moved into the stock
                     }
                 }
-                if (count($eligible) === 0) {
-                    throw new DomainException('Stock exhausted with nothing eligible to reshuffle.');
-                }
-                $this->hand['stock'] = Deck::shuffle($eligible);
-                foreach ($eligible as $c) {
-                    Cards::removeOne($this->hand['discardPile'], $c);   // moved into the stock
-                }
+                $drawn[] = array_shift($this->hand['stock']);
             }
-            $drawn[] = array_shift($this->hand['stock']);
-        }
-
-        $this->hand['hands'][$seat] = array_merge($work, $drawn);
-        $this->hand['drawRecord'][$seat] = ['discards' => array_values($discards), 'drawn' => $drawn];
-        $this->hand['drawPos']++;
-
-        if ($this->hand['drawPos'] >= $this->players) {
-            $this->enterMeld();
+            $this->hand['hands'][$seat] = array_merge($this->hand['hands'][$seat], $drawn);
+            $this->hand['drawRecord'][$seat]['drawn'] = $drawn;
         }
     }
 
@@ -309,7 +329,7 @@ final class State
         $this->hand['final'] = [];
         foreach ($this->hand['hands'] as $seat => $cards) {
             $this->hand['final'][$seat] = array_values($cards);   // the 5-card hand meld is read from
-            $det = Meld::detect($cards, $this->hand['trump']);
+            $det = Meld::detect($cards, $this->hand['inSuit']);
             $this->hand['meldRecord'][$seat] = $det;
             $sideNo = $this->seatSide($seat);
             $this->hand['meldBySide'][$sideNo] += $det['total'];
@@ -349,7 +369,7 @@ final class State
     public function legalPlaysFor(int $seat): array
     {
         $this->requirePhase('play');
-        return Trick::legalPlays($this->hand['hands'][$seat], $this->hand['trick']['plays'], $this->hand['trump']);
+        return Trick::legalPlays($this->hand['hands'][$seat], $this->hand['trick']['plays'], $this->hand['inSuit']);
     }
 
     public function play(int $seat, string $card): void
@@ -363,8 +383,8 @@ final class State
         if (!in_array($card, $held, true)) {
             throw new DomainException("You don't hold {$card}.");
         }
-        if (!Trick::isLegal($held, $this->hand['trick']['plays'], $this->hand['trump'], $card)) {
-            throw new DomainException("Illegal play: {$card}. You must follow, beat or trump when able.");
+        if (!Trick::isLegal($held, $this->hand['trick']['plays'], $this->hand['inSuit'], $card)) {
+            throw new DomainException("Illegal play: {$card}. You must follow, beat, or play in suit when able.");
         }
 
         Cards::removeOne($this->hand['hands'][$seat], $card);
@@ -378,8 +398,8 @@ final class State
     private function resolveTrick(): void
     {
         $plays   = $this->hand['trick']['plays'];
-        $trump   = $this->hand['trump'];
-        $winSeat = Trick::winnerSeat($plays, $trump);
+        $inSuit  = $this->hand['inSuit'];
+        $winSeat = Trick::winnerSeat($plays, $inSuit);
         $ctrs    = Trick::counters($plays);
         $winSide = $this->seatSide($winSeat);
 
@@ -483,6 +503,112 @@ final class State
         return $g;
     }
 
+    /**
+     * One starred strategy tip among $legalPlays — on top of the "why is this
+     * legal" ladder reason, an optional nudge toward the strongest choice.
+     * Returns null whenever there's no clean, confidently-correct pick:
+     * better to say nothing than to guess. Cases handled:
+     *
+     *   Leading (priority order, first match wins):
+     *   - You hold the ace in suit: lead it. On your own bid it cashes in
+     *     toward making it ('lead_ace_bidder'); against an opponent's bid
+     *     it grabs counters away from them early — working toward a set
+     *     ('lead_ace_defender'). Either way it's a strong lead.
+     *   - You hold 2+ cards in suit but not the ace: lead the low one, save
+     *     the high ones for a later trick ('preserve_power').
+     *   - You hold none of the in-suit but do hold an ace or ten elsewhere:
+     *     lead the strongest one — a simple, count-free good lead ('lead_power').
+     *   - Otherwise: lead your lowest card and hand control to your
+     *     partner rather than committing a middling card ('hand_control').
+     *
+     *   Following:
+     *   - Your own side already has the trick: feed them a counter that
+     *     isn't in suit — it can't help you win later anyway, so it's free
+     *     value ('feed_partner'); failing that, just play low ('safe_low_partner_winning').
+     *   - The other side has the trick and you can't beat it: sluff a
+     *     non-counter for free ('safe_sluff'); if every legal card is a
+     *     counter, name the cheapest one to give up ('cheapest_loss').
+     *   - The other side has the trick and you CAN beat it: win as cheaply
+     *     as possible ('cheap_win').
+     *
+     * @param string[] $legalPlays
+     * @param array<int,array{seat:int,card:string}> $played  the trick so far
+     */
+    private function suggestPlay(
+        array $legalPlays,
+        array $played,
+        string $inSuit,
+        int $viewerSeat,
+        string $ladderReason,
+        ?int $bidWinnerSideNo
+    ): ?array {
+        if (count($legalPlays) <= 1) {
+            return null;   // nothing to choose between
+        }
+
+        $counters    = array_values(array_filter($legalPlays, [Cards::class, 'isCounter']));
+        $nonCounters = array_values(array_filter($legalPlays, static function ($c) { return !Cards::isCounter($c); }));
+        $lowest  = static function (array $cards) { $s = Cards::sortStrong($cards); return end($s); };
+        $highest = static function (array $cards) { return Cards::sortStrong($cards)[0]; };
+
+        if ($ladderReason === 'lead') {
+            $inSuitPlays = $inSuit !== 'NS'
+                ? array_values(array_filter($legalPlays, static function ($c) use ($inSuit) {
+                    return Cards::suit($c) === $inSuit;
+                }))
+                : [];
+
+            if ($inSuitPlays) {
+                $ace = array_values(array_filter($inSuitPlays, static function ($c) { return Cards::rank($c) === 'A'; }));
+                if ($ace) {
+                    // holding the in-suit ace while leading is a strong play either
+                    // way — cash it in toward your own bid, or use it to grab
+                    // counters away from a bid-holding opponent (working a set)
+                    $onTheBid = $this->seatSide($viewerSeat) === $bidWinnerSideNo;
+                    return ['code' => $ace[0], 'reason' => $onTheBid ? 'lead_ace_bidder' : 'lead_ace_defender'];
+                }
+            }
+            if (count($inSuitPlays) >= 2) {
+                return ['code' => $lowest($inSuitPlays), 'reason' => 'preserve_power'];
+            }
+            if (!$inSuitPlays) {
+                $power = array_values(array_filter($legalPlays, static function ($c) {
+                    return Cards::rank($c) === 'A' || Cards::rank($c) === 'T';
+                }));
+                if ($power) {
+                    return ['code' => $highest($power), 'reason' => 'lead_power'];
+                }
+            }
+            return ['code' => $lowest($legalPlays), 'reason' => 'hand_control'];
+        }
+
+        $winIdx      = Trick::winnerIndex($played, $inSuit);
+        $winningSide = $this->seatSide($played[$winIdx]['seat']);
+        $mySide      = $this->seatSide($viewerSeat);
+
+        if ($winningSide === $mySide) {
+            $feedable = array_values(array_filter($counters, static function ($c) use ($inSuit) {
+                return Cards::suit($c) !== $inSuit;
+            }));
+            if ($feedable) {
+                return ['code' => $highest($feedable), 'reason' => 'feed_partner'];
+            }
+            if ($nonCounters) {
+                return ['code' => $lowest($nonCounters), 'reason' => 'safe_low_partner_winning'];
+            }
+            return null;   // only in-suit counters left — no clean tip either way
+        }
+
+        $canBeat = ($ladderReason === 'follow_beat' || $ladderReason === 'insuit_beat');
+        if ($canBeat) {
+            return ['code' => $lowest($legalPlays), 'reason' => 'cheap_win'];
+        }
+        if ($nonCounters) {
+            return ['code' => $lowest($nonCounters), 'reason' => 'safe_sluff'];
+        }
+        return ['code' => $lowest($legalPlays), 'reason' => 'cheapest_loss'];
+    }
+
     // -------------------------------------------------------------- snapshot
 
     /**
@@ -505,12 +631,22 @@ final class State
         }
 
         // when it's the viewer's turn to play, hand them their legal cards
+        // (+ which rung of the all-beat ladder produced that list, for the "why"
+        // badge, and an optional starred strategy tip on top of that — see
+        // suggestPlay())
         $legalPlays = null;
+        $legalPlayReason = null;
+        $suggestedPlay = null;
         if ($h && $h['phase'] === 'play' && $viewerSeat !== null && $viewerSeat === $this->playTurnSeat()) {
-            $legalPlays = Trick::legalPlays($h['hands'][$viewerSeat], $h['trick']['plays'], $h['trump']);
+            $legalPlays = Trick::legalPlays($h['hands'][$viewerSeat], $h['trick']['plays'], $h['inSuit']);
+            $legalPlayReason = Trick::legalPlayReason($h['hands'][$viewerSeat], $h['trick']['plays'], $h['inSuit']);
+            $suggestedPlay = $this->suggestPlay($legalPlays, $h['trick']['plays'], $h['inSuit'], $viewerSeat, $legalPlayReason, $h['bidWinnerSideNo']);
         }
 
-        // cards captured in tricks so far, grouped by side (public — all played cards)
+        // cards captured in tricks so far, grouped by side (public — all played
+        // cards). Each entry carries which seat actually played it — not just
+        // which side ended up capturing it — so the client can show "who
+        // played this" on hover.
         $capturedBySide = null;
         if ($h && !empty($h['tricks'])) {
             $capturedBySide = [];
@@ -520,7 +656,7 @@ final class State
             foreach ($h['tricks'] as $t) {
                 $side = $this->seatSide($t['winnerSeat']);
                 foreach ($t['plays'] as $p) {
-                    $capturedBySide[$side][] = $p['card'];
+                    $capturedBySide[$side][] = ['code' => $p['card'], 'seat' => $p['seat']];
                 }
             }
         }
@@ -533,11 +669,29 @@ final class State
             }
         }
 
+        // pre-deal team-pairing vote (teams mode, table full, not yet resolved)
+        $tvBallots      = $this->teamVote['ballots'] ?? [];
+        $tvResolved     = !empty($this->teamVote['resolved']);
+        $tableFull      = count($this->roster) >= $this->players;
+        $teamVoteNeeded = $this->mode === 'teams' && $h === null && $tableFull && !$tvResolved;
+        $teamVoteLocked = [];
+        foreach ($tvBallots as $uuid => $v) {
+            if (!empty($v['locked'])) {
+                $teamVoteLocked[] = $uuid;
+            }
+        }
+        $myTeamVotePicks = [];
+        if ($viewerSeat !== null && isset($this->roster[$viewerSeat])) {
+            $viewerUuid = $this->roster[$viewerSeat]['uuid'];
+            $myTeamVotePicks = $tvBallots[$viewerUuid]['picks'] ?? [];
+        }
+
         return [
             'players'       => $this->players,
             'mode'          => $this->mode,
             'target'        => $this->target,
             'joinCode'      => $this->joinCode,
+            'meetUrl'       => $this->meetUrl,
             'sides'         => $this->sides,
             'running'       => $this->running,
             'handNo'        => $this->handNo,
@@ -545,7 +699,7 @@ final class State
             'gameWinner'    => $this->gameWinnerSideNo,
             'phase'         => $h['phase'] ?? null,
             'dealerSeat'    => $h['dealerSeat'] ?? null,
-            'trump'         => $h['trump'] ?? null,
+            'inSuit'        => $h['inSuit'] ?? null,
             'bidWinnerSeat' => $h['bidWinnerSeat'] ?? null,
             'bidWinnerSideNo' => $h['bidWinnerSideNo'] ?? null,
             'winningBid'    => $h['winningBid'] ?? null,
@@ -558,6 +712,8 @@ final class State
             'tricksWonBySide'=> $h['tricksWonBySide'] ?? null,
             'result'        => $h['result'] ?? null,
             'legalPlays'    => $legalPlays,
+            'legalPlayReason' => $legalPlayReason,
+            'suggestedPlay' => $suggestedPlay,
             'keepMin'       => (int) ($this->rules['keep_min'] ?? 0),
             'meld'          => ($h && !empty($h['meldRecord'])) ? $h['meldRecord'] : null,
             'lastTrick'     => ($h && !empty($h['tricks'])) ? $h['tricks'][count($h['tricks']) - 1] : null,
@@ -565,7 +721,16 @@ final class State
             'journal'       => $this->journal,
             'ready'         => array_values($this->readyList),
             'readyNeeded'   => $readyNeeded,
+            'discarded'     => ($h && $h['phase'] === 'draw') ? array_keys($h['drawRecord']) : [],
+            'discardNeeded' => ($h && $h['phase'] === 'draw') ? range(0, $this->players - 1) : [],
+            'teamSize'        => intdiv($this->players, 2),
+            'teamVoteNeeded'  => $teamVoteNeeded,
+            'teamVoteLocked'  => $teamVoteLocked,
+            'myTeamVotePicks' => $myTeamVotePicks,
+            'botVotes'      => $this->botVotes,
             'seats'         => $seats,
+            'viewerCount'   => count($this->viewers),
+            'viewers'       => array_map(static function ($v) { return $v['name']; }, array_values($this->viewers)),
         ];
     }
 
@@ -577,7 +742,7 @@ final class State
         switch ($this->hand['phase']) {
             case 'auction': return $this->auctionTurnSeat();
             case 'declare': return $this->hand['bidWinnerSeat'];
-            case 'draw':    return $this->drawTurnSeat();
+            case 'draw':    return null;   // parallel — every seat may discard whenever it likes
             case 'play':    return $this->playTurnSeat();
             default:        return null;
         }

@@ -1,38 +1,37 @@
 <?php
 declare(strict_types=1);
 
-// -----------------------------------------------------------------------------
-// Cards — the vocabulary. A card is a 2-char code: rank + suit.
-//   rank: 9 T J Q K A   (T = ten; keeps every card 2 chars)
-//   suit: S H D C
-//   e.g. "AS", "TS", "9H", "QD"
-//
-// Trick-play rank, high -> low:  A T K Q J 9   (the ten outranks the king)
-// Counters: A, T, K  — 1 point each, 24 in the 48-card deck.
-// The deck holds TWO identical copies of every card, so a code is not unique;
-// hands / piles are plain arrays of codes and may contain duplicates.
-// -----------------------------------------------------------------------------
+namespace PokerPinochle\Engine;
 
+/**
+ * Card vocabulary. A card is a 2-char code: rank + suit.
+ *
+ *   rank: 9 T J Q K A   (T = ten; keeps every card to 2 chars)
+ *   suit: S H D C
+ *
+ * Trick-play strength (high to low): A T K Q J 9 — the ten outranks the king.
+ * Counters: A, T, K — 1 point each, 24 in the full 48-card deck.
+ * The deck holds TWO identical copies of every card.
+ */
 final class Cards
 {
-    const SUITS    = ['S', 'H', 'D', 'C'];
-    const RANKS    = ['9', 'T', 'J', 'Q', 'K', 'A'];   // build order (low -> high)
-    const COUNTERS = ['A', 'T', 'K'];
+    public const SUITS    = ['S', 'H', 'D', 'C'];
+    public const RANKS    = ['9', 'T', 'J', 'Q', 'K', 'A'];
+    public const COUNTERS = ['A', 'T', 'K'];
 
-    /** Trick-play strength. Higher wins. 9 < J < Q < K < T < A. */
-    const RANK_VALUE = ['9' => 0, 'J' => 1, 'Q' => 2, 'K' => 3, 'T' => 4, 'A' => 5];
+    public const RANK_VALUE = ['9' => 0, 'J' => 1, 'Q' => 2, 'K' => 3, 'T' => 4, 'A' => 5];
 
-    const SUIT_NAME = ['S' => 'spades', 'H' => 'hearts', 'D' => 'diamonds', 'C' => 'clubs', 'NT' => 'no trump'];
-    const SUIT_GLYPH = ['S' => '♠', 'H' => '♥', 'D' => '♦', 'C' => '♣', 'NT' => 'NT'];
+    public const SUIT_NAME  = ['S' => 'spades', 'H' => 'hearts', 'D' => 'diamonds', 'C' => 'clubs', 'NS' => 'no suit'];
+    public const SUIT_GLYPH = ['S' => '♠', 'H' => '♥', 'D' => '♦', 'C' => '♣', 'NS' => 'NS'];
 
     public static function rank(string $card): string
     {
-        return substr($card, 0, 1);
+        return $card[0];
     }
 
     public static function suit(string $card): string
     {
-        return substr($card, 1, 1);
+        return $card[1];
     }
 
     public static function value(string $card): int
@@ -50,7 +49,7 @@ final class Cards
         return self::isCounter($card) ? 1 : 0;
     }
 
-    /** Total counter points in a list of cards. */
+    /** @param string[] $cards */
     public static function countCounters(array $cards): int
     {
         $n = 0;
@@ -60,7 +59,7 @@ final class Cards
         return $n;
     }
 
-    /** True if $card is a well-formed code. */
+    /** @param mixed $card */
     public static function isValid($card): bool
     {
         return is_string($card)
@@ -69,7 +68,10 @@ final class Cards
             && in_array($card[1], self::SUITS, true);
     }
 
-    /** Remove ONE instance of $card from $hand. Returns true if removed. */
+    /**
+     * Remove ONE instance of $card from $hand.
+     * @param string[] $hand
+     */
     public static function removeOne(array &$hand, string $card): bool
     {
         $i = array_search($card, $hand, true);
@@ -80,7 +82,7 @@ final class Cards
         return true;
     }
 
-    /** Count instances of $card in $hand. */
+    /** @param string[] $hand */
     public static function countOf(array $hand, string $card): int
     {
         $n = 0;
@@ -92,7 +94,10 @@ final class Cards
         return $n;
     }
 
-    /** Cards in $hand of a given suit. */
+    /**
+     * @param string[] $hand
+     * @return string[]
+     */
     public static function ofSuit(array $hand, string $suit): array
     {
         $out = [];
@@ -104,15 +109,15 @@ final class Cards
         return $out;
     }
 
-    /** Sort a list of codes by trick strength, high -> low (stable-ish). */
+    /**
+     * Sort by trick strength, high to low.
+     * @param string[] $cards
+     * @return string[]
+     */
     public static function sortStrong(array $cards): array
     {
-        usort($cards, static function ($a, $b) {
-            $d = self::value($b) - self::value($a);
-            if ($d !== 0) {
-                return $d;
-            }
-            return strcmp($a, $b);
+        usort($cards, static function (string $a, string $b): int {
+            return self::value($b) - self::value($a) ?: strcmp($a, $b);
         });
         return $cards;
     }

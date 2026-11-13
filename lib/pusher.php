@@ -8,11 +8,9 @@ require_once __DIR__ . '/bootstrap.php';
 //
 // Hand-rolled Pusher HTTP trigger (no Composer): ksort'd auth params, body_md5,
 // HMAC-SHA256 signature over "POST\n<path>\n<querystring>", curl POST.
-// Pattern lifted from w:\soketi-test\publish.php.
 //
-// This is the SERVER -> Soketi hop (plain http on the LAN is fine). The
-// browser -> Soketi hop needs a wss:// URL — config ['soketi']['ws_url'],
-// consumed by the client in Phase 5.
+// Server -> Soketi hop. The browser -> Soketi hop needs a wss:// URL set in
+// config ['soketi']['ws_url'].
 //
 // @return array{ok:bool, skipped:bool, code:int, error:string}
 // -----------------------------------------------------------------------------

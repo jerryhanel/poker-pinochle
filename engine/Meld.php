@@ -1,37 +1,14 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/Cards.php';
-
-// -----------------------------------------------------------------------------
-// Meld — scoring combinations shown from the final 5-card hand (after the draw).
-// Melded cards STAY in the hand and are played normally during the tricks.
-//
-// The list is complete as written — no A-T-K-Q-J run meld. ONE card may fill
-// TWO different melds at once (e.g. Q♠ counts in a spade marriage AND the
-// pinochle), so detection never "consumes" cards. The deck carries two copies
-// of every card, so a hand CAN hold both copies of a combo's cards (two
-// marriages of the same suit, double pinochle, two nines of trump) — each
-// full copy of the combo scores again, counted via card multiplicity, not a
-// yes/no membership check.
-//
-//   Marriage (K+Q same suit) ...... 4 in trump, else 2   (under NT: always 2)
-//   9 of trump .................... 1                     (none under NT)
-//   Pinochle (Q♠ + J♦) ............ 4
-//   Four Aces  (one per suit) ..... 10
-//   Four Kings (one per suit) ..... 8
-//   Four Queens (one per suit) .... 6
-//   Four Jacks  (one per suit) .... 4
-//
-// $trump is 'S' | 'H' | 'D' | 'C' | 'NT'.
-// -----------------------------------------------------------------------------
+namespace PokerPinochle\Engine;
 
 final class Meld
 {
     /**
      * @return array{items: array<int,array{type:string,label:string,cards:array,points:int}>, total:int}
      */
-    public static function detect(array $hand, string $trump): array
+    public static function detect(array $hand, string $inSuit): array
     {
         $items = [];
         $has = static function (string $card) use ($hand): bool {
@@ -51,26 +28,26 @@ final class Meld
         foreach (Cards::SUITS as $s) {
             $copies = min($count('K' . $s), $count('Q' . $s));
             if ($copies > 0) {
-                $inTrump = ($trump !== 'NT' && $s === $trump);
+                $isInSuit = ($inSuit !== 'NS' && $s === $inSuit);
                 for ($i = 0; $i < $copies; $i++) {
                     $items[] = [
-                        'type'   => $inTrump ? 'marriage_trump' : 'marriage',
-                        'label'  => ($inTrump ? 'Royal marriage ' : 'Marriage ') . Cards::SUIT_GLYPH[$s],
+                        'type'   => $isInSuit ? 'marriage_in_suit' : 'marriage',
+                        'label'  => ($isInSuit ? 'Royal marriage ' : 'Marriage ') . Cards::SUIT_GLYPH[$s],
                         'cards'  => ['K' . $s, 'Q' . $s],
-                        'points' => $inTrump ? 4 : 2,
+                        'points' => $isInSuit ? 4 : 2,
                     ];
                 }
             }
         }
 
-        // --- 9 of trump (the "dix") — one instance per copy held ---
-        if ($trump !== 'NT') {
-            $copies = $count('9' . $trump);
+        // --- 9 in suit (the "dix") — one instance per copy held ---
+        if ($inSuit !== 'NS') {
+            $copies = $count('9' . $inSuit);
             for ($i = 0; $i < $copies; $i++) {
                 $items[] = [
-                    'type'   => 'nine_trump',
-                    'label'  => '9 of trump',
-                    'cards'  => ['9' . $trump],
+                    'type'   => 'nine_in_suit',
+                    'label'  => '9 in suit',
+                    'cards'  => ['9' . $inSuit],
                     'points' => 1,
                 ];
             }
@@ -114,8 +91,8 @@ final class Meld
     }
 
     /** Just the point total. */
-    public static function points(array $hand, string $trump): int
+    public static function points(array $hand, string $inSuit): int
     {
-        return self::detect($hand, $trump)['total'];
+        return self::detect($hand, $inSuit)['total'];
     }
 }

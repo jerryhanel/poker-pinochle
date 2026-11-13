@@ -1,31 +1,9 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/Cards.php';
+namespace PokerPinochle\Engine;
 
-// -----------------------------------------------------------------------------
-// Auction — one trip around the table, no second round.
-//
-//  * Bidding opens to the LEFT of the dealer and moves clockwise; the dealer
-//    bids last.
-//  * On your turn: pass, or name a number STRICTLY above the current high,
-//    within [player_count .. 20].
-//  * Highest bid wins. Everyone passes -> the dealer is "stuck" at player_count.
-//  * Teams: each member bids on their own turn; the won bid belongs to the team.
-//
-// State is a plain array so it round-trips to JSON / the DB unchanged:
-//   [
-//     'players'   => int,
-//     'dealerSeat'=> int,
-//     'min'       => int,   // lowest legal bid (= player_count)
-//     'max'       => 20,
-//     'order'     => int[],  // seat order for the trip (left-of-dealer .. dealer)
-//     'pos'       => int,    // index into order of whose turn it is
-//     'high'      => ['seat'=>int,'amount'=>int] | null,
-//     'log'       => array,  // one entry per turn: ['seat'=>..,'action'=>..,'amount'=>..]
-//     'closed'    => bool,
-//   ]
-// -----------------------------------------------------------------------------
+use DomainException;
 
 final class Auction
 {

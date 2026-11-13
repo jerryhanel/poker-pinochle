@@ -5,8 +5,7 @@ require_once __DIR__ . '/bootstrap.php';
 
 // -----------------------------------------------------------------------------
 // pp_db() — one shared mysqli handle for the poker_pinochle database.
-// Credentials come from config.php ['db']. MySQL is on the NAS (192.168.8.218),
-// reached over the LAN — not localhost.
+// Credentials come from config.php ['db'].
 // -----------------------------------------------------------------------------
 
 function pp_db(): mysqli
@@ -20,7 +19,7 @@ function pp_db(): mysqli
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
     $db = new mysqli(
-        (string) ($c['host'] ?? '192.168.8.218'),
+        (string) ($c['host'] ?? '127.0.0.1'),
         (string) ($c['user'] ?? ''),
         (string) ($c['pass'] ?? ''),
         (string) ($c['name'] ?? '')
