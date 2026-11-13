@@ -1,12 +1,15 @@
 # Local secrets — never commit
 config.php
+*.md
 
 # Logs / scratch
 *.log
 /tmp/
 /scratch/
+/migrations
 
 # OS cruft
 .DS_Store
 Thumbs.db
 desktop.ini
+.secrets/
